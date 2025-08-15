@@ -588,7 +588,9 @@ class TaskExecutor:
             final_msg = MessageChain()
             
             # 添加@消息（复用现有逻辑）
-            original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
+            # 使用 _get_send_session_id 来获取正确的发送会话ID格式
+            is_private_chat = self.message_handler.is_private_chat(unified_msg_origin)
+            original_msg_origin = self._get_send_session_id(unified_msg_origin, is_private_chat)
             if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
                 if original_msg_origin.startswith("aiocqhttp"):
                     final_msg.chain.append(At(qq=reminder["creator_id"]))
@@ -756,7 +758,14 @@ class TaskExecutor:
                 final_msg.chain.append(Plain("".join(text_parts)))
             
             # 如果最终消息链中有内容（除了@之外），发送它
-            if len(final_msg.chain) > 1 or (len(final_msg.chain) == 1 and not isinstance(final_msg.chain[0], (At, Plain))):
+            # 检查是否有除了@之外的内容
+            has_content = False
+            for comp in final_msg.chain:
+                if not isinstance(comp, At):
+                    has_content = True
+                    break
+            
+            if has_content:
                 await self._send_complex_message(final_msg, original_msg_origin, func_name, "其他")
     
     async def _send_complex_message(self, message_chain: MessageChain, original_msg_origin: str, func_name: str, message_type: str):
@@ -780,22 +789,15 @@ class TaskExecutor:
     
     def _get_send_session_id(self, unified_msg_origin: str, is_private_chat: bool) -> str:
         """获取发送会话ID"""
-        if ":" in unified_msg_origin:
-            # 优先使用原始会话ID（去除用户隔离部分）
-            send_session_id = self.message_handler.get_original_session_id(unified_msg_origin)
-            
-            # 如果格式不对，尝试其他方式
-            if len(send_session_id.split(":")) < 2:
-                if len(unified_msg_origin.split(":")) >= 3:
-                    # 保留原始session_id结构，但确保不会因分割过多引发错误
-                    parts = unified_msg_origin.split(":", 2)
-                    msg_type = "FriendMessage" if is_private_chat else "GroupMessage"
-                    send_session_id = f"{parts[0]}:{msg_type}:{parts[2]}"
-                else:
-                    # 使用原始session_id
-                    send_session_id = unified_msg_origin
+        # 直接使用 get_original_session_id 的结果，因为它已经正确处理了各种情况
+        send_session_id = self.message_handler.get_original_session_id(unified_msg_origin)
+        
+        # 确保返回的格式是正确的
+        if ":" in send_session_id:
+            # 如果已经是正确格式，直接返回
+            return send_session_id
         else:
-            # 如果session_id没有合适格式，构造一个基本形式
+            # 如果不是正确格式，尝试构造
             platform_name = "unknown"
             if any(unified_msg_origin.startswith(platform) for platform in self.wechat_platforms):
                 for platform in self.wechat_platforms:
@@ -806,9 +808,7 @@ class TaskExecutor:
                 platform_name = unified_msg_origin.split(":", 1)[0]
             
             msg_type = "FriendMessage" if is_private_chat else "GroupMessage"
-            send_session_id = f"{platform_name}:{msg_type}:unknown"
-        
-        return send_session_id
+            return f"{platform_name}:{msg_type}:{send_session_id}"
     
     async def _process_tool_results(self, tool_results, task_text, unified_msg_origin, new_contexts, result_msg):
         """处理工具调用结果"""
@@ -849,8 +849,9 @@ class TaskExecutor:
     
     async def _send_task_result(self, unified_msg_origin: str, reminder: dict, result_msg: MessageChain):
         """发送任务结果"""
-        # 获取原始消息ID（去除用户隔离部分）
-        original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
+        # 获取正确的发送会话ID格式
+        is_private_chat = self.message_handler.is_private_chat(unified_msg_origin)
+        original_msg_origin = self._get_send_session_id(unified_msg_origin, is_private_chat)
         logger.info(f"尝试发送消息到: {original_msg_origin} (原始ID: {unified_msg_origin})")
         
         # 构建最终的消息链，先添加@再添加结果
