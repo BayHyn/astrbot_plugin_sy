@@ -36,14 +36,20 @@ class ReminderCommands:
         provider = self.context.get_using_provider()
         if provider:
             try:
-                # 分离提醒和任务
+                # 分离提醒、任务和指令任务
                 reminder_items = []
                 task_items = []
+                command_task_items = []
                 
                 for r in reminders:
-                    if r.get("is_task", False):
+                    if r.get("is_command_task", False):
+                        # 指令任务，显示完整指令
+                        command_task_items.append(f"- /{r['text']} (时间: {r['datetime']})")
+                    elif r.get("is_task", False):
+                        # 普通任务
                         task_items.append(f"- {r['text']} (时间: {r['datetime']})")
                     else:
+                        # 提醒
                         reminder_items.append(f"- {r['text']} (时间: {r['datetime']})")
                 
                 # 构建提示
@@ -55,7 +61,10 @@ class ReminderCommands:
                 if task_items:
                     prompt += f"\n\n任务列表：\n" + "\n".join(task_items)
                 
-                prompt += "\n\n同时告诉用户可以使用/rmd rm <序号>删除提醒或任务，或者直接命令你来删除。直接发出对话内容，就是你说的话，不要有其他的背景描述。"
+                if command_task_items:
+                    prompt += f"\n\n指令任务列表：\n" + "\n".join(command_task_items)
+                
+                prompt += "\n\n同时告诉用户可以使用/rmd rm <序号>删除提醒、任务或指令任务，或者直接命令你来删除。直接发出对话内容，就是你说的话，不要有其他的背景描述。"
                 
                 response = await provider.text_chat(
                     prompt=prompt,
@@ -70,7 +79,8 @@ class ReminderCommands:
                 
                 # 分类显示
                 reminders_list = [r for r in reminders if not r.get("is_task", False)]
-                tasks_list = [r for r in reminders if r.get("is_task", False)]
+                tasks_list = [r for r in reminders if r.get("is_task", False) and not r.get("is_command_task", False)]
+                command_tasks_list = [r for r in reminders if r.get("is_command_task", False)]
                 
                 if reminders_list:
                     reminder_str += "\n提醒：\n"
@@ -82,14 +92,21 @@ class ReminderCommands:
                     for i, task in enumerate(tasks_list):
                         reminder_str += f"{len(reminders_list)+i+1}. {task['text']} - {task['datetime']}\n"
                 
-                reminder_str += "\n使用 /rmd rm <序号> 删除提醒或任务"
+                if command_tasks_list:
+                    reminder_str += "\n指令任务：\n"
+                    current_index = len(reminders_list) + len(tasks_list)
+                    for i, cmd_task in enumerate(command_tasks_list):
+                        reminder_str += f"{current_index+i+1}. /{cmd_task['text']} - {cmd_task['datetime']}\n"
+                
+                reminder_str += "\n使用 /rmd rm <序号> 删除提醒、任务或指令任务"
                 yield event.plain_result(reminder_str)
         else:
             reminder_str = "当前的提醒和任务：\n"
             
             # 分类显示
             reminders_list = [r for r in reminders if not r.get("is_task", False)]
-            tasks_list = [r for r in reminders if r.get("is_task", False)]
+            tasks_list = [r for r in reminders if r.get("is_task", False) and not r.get("is_command_task", False)]
+            command_tasks_list = [r for r in reminders if r.get("is_command_task", False)]
             
             if reminders_list:
                 reminder_str += "\n提醒：\n"
@@ -101,14 +118,20 @@ class ReminderCommands:
                 for i, task in enumerate(tasks_list):
                     reminder_str += f"{len(reminders_list)+i+1}. {task['text']} - {task['datetime']}\n"
             
-            reminder_str += "\n使用 /rmd rm <序号> 删除提醒或任务"
+            if command_tasks_list:
+                reminder_str += "\n指令任务：\n"
+                current_index = len(reminders_list) + len(tasks_list)
+                for i, cmd_task in enumerate(command_tasks_list):
+                    reminder_str += f"{current_index+i+1}. /{cmd_task['text']} - {cmd_task['datetime']}\n"
+            
+            reminder_str += "\n使用 /rmd rm <序号> 删除提醒、任务或指令任务"
             yield event.plain_result(reminder_str)
 
     async def remove_reminder(self, event: AstrMessageEvent, index: int):
-        '''删除提醒或任务
+        '''删除提醒、任务或指令任务
         
         Args:
-            index(int): 提醒或任务的序号
+            index(int): 提醒、任务或指令任务的序号
         '''
         # 获取用户ID，用于会话隔离
         creator_id = event.get_sender_id()
@@ -143,12 +166,22 @@ class ReminderCommands:
         removed = reminders.pop(index - 1)
         await save_reminder_data(self.data_file, self.reminder_data)
         
+        is_command_task = removed.get("is_command_task", False)
         is_task = removed.get("is_task", False)
-        item_type = "任务" if is_task else "提醒"
+        
+        if is_command_task:
+            item_type = "指令任务"
+            display_text = f"/{removed['text']}"
+        elif is_task:
+            item_type = "任务"
+            display_text = removed['text']
+        else:
+            item_type = "提醒"
+            display_text = removed['text']
         
         provider = self.context.get_using_provider()
         if provider:
-            prompt = f"用户删除了一个{item_type}，内容是'{removed['text']}'。请用自然的语言确认删除操作。直接发出对话内容，就是你说的话，不要有其他的背景描述。"
+            prompt = f"用户删除了一个{item_type}，内容是'{display_text}'。请用自然的语言确认删除操作。直接发出对话内容，就是你说的话，不要有其他的背景描述。"
             response = await provider.text_chat(
                 prompt=prompt,
                 session_id=event.session_id,
@@ -156,7 +189,7 @@ class ReminderCommands:
             )
             yield event.plain_result(response.completion_text)
         else:
-            yield event.plain_result(f"已删除{item_type}：{removed['text']}")
+            yield event.plain_result(f"已删除{item_type}：{display_text}")
 
     async def add_reminder(self, event: AstrMessageEvent, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''手动添加提醒
@@ -458,6 +491,7 @@ class ReminderCommands:
 
 【提醒】：到时间后会提醒你做某事
 【任务】：到时间后AI会自动执行指定的操作
+【指令任务】：到时间后直接执行指定的指令并转发结果
 
 1. 添加提醒：
    /rmd add <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
@@ -475,6 +509,13 @@ class ReminderCommands:
    - /rmd task 发送天气预报 8:00
    - /rmd task 汇总今日新闻 18:00 daily
    - /rmd task 推送工作安排 9:00 mon weekly workday (每周一工作日推送)
+
+2.5. 添加指令任务：
+   /rmd command <指令> <时间> [开始星期] [重复类型] [--holiday_type=...]
+   例如：
+   - /rmd command /memory_config 8:00
+   - /rmd command /weather 9:00 daily
+   - /rmd command /news 18:00 mon weekly (每周一推送)
 
 3. 查看提醒和任务：
    /rmd ls - 列出所有提醒和任务
@@ -516,3 +557,155 @@ class ReminderCommands:
            session_isolation_status="当前已开启会话隔离" if self.unique_session else "当前未开启会话隔离"
         )
         yield event.plain_result(help_text)
+
+    async def add_command_task(self, event: AstrMessageEvent, command: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
+        '''设置指令任务
+        
+        Args:
+            command(string): 要执行的指令，如"/memory_config"
+            time_str(string): 时间，格式为 HH:MM 或 HHMM
+            week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly
+            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+        '''
+        try:
+            # 验证指令格式
+            if not command.startswith('/'):
+                yield event.plain_result("指令格式错误，必须以 / 开头，如：/memory_config")
+                return
+            
+            # 去掉开头的 /
+            clean_command = command[1:] if command.startswith('/') else command
+            
+            # 解析时间
+            try:
+                datetime_str = parse_datetime(time_str)
+            except ValueError as e:
+                yield event.plain_result(str(e))
+                return
+
+            # 验证星期格式
+            week_map = {
+                'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 
+                'fri': 4, 'sat': 5, 'sun': 6
+            }
+            
+            # 参数处理逻辑（复用现有逻辑）
+            if week and week.lower() not in week_map:
+                if week.lower() in ["daily", "weekly", "monthly", "yearly"] or week.lower() in ["workday", "holiday"]:
+                    if repeat:
+                        holiday_type = repeat
+                        repeat = week
+                    else:
+                        repeat = week
+                    week = None
+                    logger.info(f"已将'{week}'识别为重复类型，默认使用今天作为开始日期")
+                else:
+                    yield event.plain_result("星期格式错误，可选值：mon,tue,wed,thu,fri,sat,sun")
+                    return
+
+            # 特殊处理: 检查repeat是否包含节假日类型信息
+            if repeat:
+                parts = repeat.split()
+                if len(parts) == 2 and parts[1] in ["workday", "holiday"]:
+                    repeat = parts[0]
+                    holiday_type = parts[1]
+
+            # 验证重复类型
+            repeat_types = ["daily", "weekly", "monthly", "yearly"]
+            if repeat and repeat.lower() not in repeat_types:
+                yield event.plain_result("重复类型错误，可选值：daily,weekly,monthly,yearly")
+                return
+                
+            # 验证节假日类型
+            holiday_types = ["workday", "holiday"]
+            if holiday_type and holiday_type.lower() not in holiday_types:
+                yield event.plain_result("节假日类型错误，可选值：workday(仅工作日执行)，holiday(仅法定节假日执行)")
+                return
+
+            # 获取用户ID，用于会话隔离
+            creator_id = event.get_sender_id()
+            
+            # 获取会话ID
+            raw_msg_origin = event.unified_msg_origin
+            if self.unique_session:
+                # 使用会话隔离
+                msg_origin = self.tools.get_session_id(raw_msg_origin, creator_id)
+            else:
+                msg_origin = raw_msg_origin
+                
+            # 获取创建者昵称
+            creator_name = event.message_obj.sender.nickname if hasattr(event.message_obj, 'sender') and hasattr(event.message_obj.sender, 'nickname') else None
+            
+            if msg_origin not in self.reminder_data:
+                self.reminder_data[msg_origin] = []
+            
+            dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
+            
+            # 如果指定了星期，调整到下一个符合的日期
+            if week:
+                target_weekday = week_map[week.lower()]
+                current_weekday = dt.weekday()
+                days_ahead = target_weekday - current_weekday
+                if days_ahead <= 0:  # 如果目标星期已过，调整到下周
+                    days_ahead += 7
+                dt += datetime.timedelta(days=days_ahead)
+            
+            # 处理重复类型和节假日类型的组合
+            final_repeat = repeat.lower() if repeat else "none"
+            if repeat and holiday_type:
+                final_repeat = f"{repeat.lower()}_{holiday_type.lower()}"
+            
+            item = {
+                "text": clean_command,  # 存储不带 / 的指令
+                "datetime": dt.strftime("%Y-%m-%d %H:%M"),
+                "user_name": "指令任务",  # 指令任务标识
+                "repeat": final_repeat,
+                "creator_id": creator_id,
+                "creator_name": creator_name,
+                "is_task": True,  # 标记为任务
+                "is_command_task": True  # 特殊标记：指令任务
+            }
+            
+            self.reminder_data[msg_origin].append(item)
+            
+            # 设置定时任务
+            self.scheduler_manager.add_job(msg_origin, item, dt)
+            
+            await save_reminder_data(self.data_file, self.reminder_data)
+            
+            # 生成提示信息
+            week_names = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+            start_str = f"从{week_names[dt.weekday()]}开始，" if week else ""
+            
+            # 根据重复类型和节假日类型生成文本说明
+            repeat_str = "一次性"
+            if repeat == "daily" and not holiday_type:
+                repeat_str = "每天重复"
+            elif repeat == "daily" and holiday_type == "workday":
+                repeat_str = "每个工作日重复（法定节假日不触发）"
+            elif repeat == "daily" and holiday_type == "holiday":
+                repeat_str = "每个法定节假日重复"
+            elif repeat == "weekly" and not holiday_type:
+                repeat_str = "每周重复"
+            elif repeat == "weekly" and holiday_type == "workday":
+                repeat_str = "每周的这一天重复，但仅工作日触发"
+            elif repeat == "weekly" and holiday_type == "holiday":
+                repeat_str = "每周的这一天重复，但仅法定节假日触发"
+            elif repeat == "monthly" and not holiday_type:
+                repeat_str = "每月重复"
+            elif repeat == "monthly" and holiday_type == "workday":
+                repeat_str = "每月的这一天重复，但仅工作日触发"
+            elif repeat == "monthly" and holiday_type == "holiday":
+                repeat_str = "每月的这一天重复，但仅法定节假日触发"
+            elif repeat == "yearly" and not holiday_type:
+                repeat_str = "每年重复"
+            elif repeat == "yearly" and holiday_type == "workday":
+                repeat_str = "每年的这一天重复，但仅工作日触发"
+            elif repeat == "yearly" and holiday_type == "holiday":
+                repeat_str = "每年的这一天重复，但仅法定节假日触发"
+            
+            yield event.plain_result(f"已设置指令任务:\n指令: /{clean_command}\n时间: {dt.strftime('%Y-%m-%d %H:%M')}\n{start_str}{repeat_str}\n\n使用 /rmd ls 查看所有提醒和任务")
+            
+        except Exception as e:
+            yield event.plain_result(f"设置指令任务时出错：{str(e)}")

@@ -9,7 +9,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.1")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.2")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -164,3 +164,18 @@ class SmartReminder(Star):
         '''显示帮助信息'''
         async for result in self.commands.show_help(event):
             yield result
+
+    @rmd.command("command")
+    async def add_command_task(self, event: AstrMessageEvent, command: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
+        '''设置指令任务
+        
+        Args:
+            command(string): 要执行的指令，如"/memory_config"
+            time_str(string): 时间，格式为 HH:MM 或 HHMM
+            week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly
+            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+        '''
+        async for result in self.commands.add_command_task(event, command, time_str, week, repeat, holiday_type):
+            yield result
+

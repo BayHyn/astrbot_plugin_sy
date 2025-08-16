@@ -363,6 +363,12 @@ class TaskExecutor:
         task_text = reminder['text']
         logger.info(f"Task Activated: {task_text}, attempting to execute for {unified_msg_origin}")
         
+        # 检查是否是指令任务
+        if reminder.get("is_command_task", False):
+            logger.info(f"检测到指令任务，直接执行指令: {task_text}")
+            await self._execute_command_task(unified_msg_origin, reminder, task_text)
+            return
+        
         # 应用安全解析器补丁
         self._apply_safe_session_parser()
         
@@ -448,6 +454,28 @@ class TaskExecutor:
             # 尝试发送错误消息
             error_msg = MessageChain()
             error_msg.chain.append(Plain(f"执行任务时出错: {str(e)}"))
+            
+            original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
+            await self.context.send_message(original_msg_origin, error_msg)
+    
+    async def _execute_command_task(self, unified_msg_origin: str, reminder: dict, command: str):
+        """执行指令任务"""
+        try:
+            # 创建指令触发器
+            from .command_trigger import CommandTrigger
+            trigger = CommandTrigger(self.context, self.wechat_platforms)
+            
+            # 直接触发指令并转发结果
+            await trigger.trigger_and_forward_command(unified_msg_origin, reminder, command)
+            
+        except Exception as e:
+            logger.error(f"执行指令任务时出错: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # 发送错误消息
+            error_msg = MessageChain()
+            error_msg.chain.append(Plain(f"执行指令任务 /{command} 时出错: {str(e)}"))
             
             original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
             await self.context.send_message(original_msg_origin, error_msg)
