@@ -84,10 +84,10 @@
 ### 使用演示
 
 ![提醒演示](https://sywb.top/Staticfiles/pic/ys1.png)
-![任务列表](https://sywb.top/Staticfiles/pic/ys2.png)
 ![自动执行任务](https://sywb.top/Staticfiles/pic/ys3.png)
 ![自动执行任务2](https://sywb.top/Staticfiles/pic/ys5.png)
 ![指令任务](https://sywb.top/Staticfiles/pic/ys6.png)
+![复杂指令](https://sywb.top/Staticfiles/pic/ys7.png)
 ![人性化回复](https://sywb.top/Staticfiles/pic/ys4.png)
 
 ### 重复类型说明
