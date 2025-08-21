@@ -1,10 +1,9 @@
 import asyncio
 from astrbot.api import logger
 from astrbot.api.message_components import Plain
-from astrbot.core.platform.astr_message_event import AstrMessageEvent as CoreAstrMessageEvent
-from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageType
-from astrbot.core.platform.platform_metadata import PlatformMetadata
+from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from astrbot.core.message.message_event_result import MessageChain
+from .event_factory import EventFactory
 
 
 class CommandTrigger:
@@ -16,6 +15,7 @@ class CommandTrigger:
         self.captured_messages = []  # 存储捕获到的消息
         self.original_send_method = None  # 保存原始的send方法
         self.target_event = None  # 目标事件对象
+        self.event_factory = EventFactory(context)  # 事件工厂
         
     def setup_message_interceptor(self, target_event):
         """设置消息拦截器来捕获指令的响应"""
@@ -46,68 +46,9 @@ class CommandTrigger:
             self.target_event.send = self.original_send_method
             logger.info("已恢复原始消息发送器")
     
-    def create_command_event(self, unified_msg_origin: str, command: str, creator_id: str, creator_name: str = None) -> CoreAstrMessageEvent:
+    def create_command_event(self, unified_msg_origin: str, command: str, creator_id: str, creator_name: str = None) -> AstrMessageEvent:
         """创建指令事件对象"""
-        
-        # 解析平台信息
-        platform_name = "unknown"
-        session_id = "unknown"
-        message_type = MessageType.FRIEND_MESSAGE
-        
-        if ":" in unified_msg_origin:
-            parts = unified_msg_origin.split(":")
-            if len(parts) >= 3:
-                platform_name = parts[0]
-                msg_type_str = parts[1]
-                session_id = ":".join(parts[2:])  # 可能包含多个冒号
-                
-                if "GroupMessage" in msg_type_str:
-                    message_type = MessageType.GROUP_MESSAGE
-                elif "FriendMessage" in msg_type_str:
-                    message_type = MessageType.FRIEND_MESSAGE
-        
-        # 创建消息对象
-        msg = AstrBotMessage()
-        msg.message_str = command
-        msg.session_id = session_id
-        msg.type = message_type
-        msg.self_id = "astrbot_command_trigger"
-        
-        # 设置发送者信息
-        from astrbot.api.platform import MessageMember
-        msg.sender = MessageMember(creator_id, creator_name or "用户")
-        
-        # 设置群组ID（如果是群聊）
-        if message_type == MessageType.GROUP_MESSAGE:
-            # 从session_id中提取群组ID
-            if "_" in session_id:
-                # 处理会话隔离格式
-                group_id = session_id.split("_")[0]
-            else:
-                group_id = session_id
-            msg.group_id = group_id
-        
-        # 设置消息链
-        from astrbot.core.message.components import Plain as CorePlain
-        msg.message = [CorePlain(command)]
-        
-        # 创建平台元数据
-        meta = PlatformMetadata(platform_name, "command_trigger")
-        
-        # 创建新的事件对象
-        fake_event = CoreAstrMessageEvent(
-            message_str=command,
-            message_obj=msg,
-            platform_meta=meta,
-            session_id=session_id
-        )
-        
-        # 设置必要属性
-        fake_event.unified_msg_origin = unified_msg_origin
-        fake_event.is_wake = True  # 标记为唤醒状态
-        fake_event.is_at_or_wake_command = True  # 标记为指令
-        
-        return fake_event
+        return self.event_factory.create_event(unified_msg_origin, command, creator_id, creator_name)
     
     async def trigger_and_capture_command(self, unified_msg_origin: str, command: str, creator_id: str, creator_name: str = None):
         """触发指令并捕获响应"""
@@ -127,7 +68,7 @@ class CommandTrigger:
             logger.info(f"已将指令事件 {command} 提交到事件队列")
             
             # 等待指令执行并捕获响应
-            max_wait_time = 5.0  # 最大等待5秒
+            max_wait_time = 20.0  # 最大等待20秒
             wait_interval = 0.1   # 每100毫秒检查一次
             waited_time = 0.0
             
@@ -163,9 +104,14 @@ class CommandTrigger:
         creator_id = reminder.get("creator_id", "unknown")
         creator_name = reminder.get("creator_name")
         
+        # 获取实际执行的命令
+        actual_command = command
+        if "commands" in reminder and isinstance(reminder["commands"], list) and len(reminder["commands"]) > 0:
+            actual_command = reminder["commands"][0]  # 取第一个（也是唯一的）命令
+        
         # 触发指令并捕获响应
         success, captured_messages = await self.trigger_and_capture_command(
-            unified_msg_origin, command, creator_id, creator_name
+            unified_msg_origin, actual_command, creator_id, creator_name
         )
         
         if success and captured_messages:
@@ -198,7 +144,8 @@ class CommandTrigger:
                         forward_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
                 
                 # 添加指令任务标识和结果
-                forward_msg.chain.append(Plain(f"[指令任务] /{command}\n"))
+                command_display = reminder.get("text", command)
+                forward_msg.chain.append(Plain(f"[指令任务] {command_display}\n"))
                 
                 # 添加捕获到的消息内容
                 for component in captured_msg.chain:
@@ -233,6 +180,7 @@ class CommandTrigger:
                 else:
                     error_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
             
-            error_msg.chain.append(Plain(f"[指令任务] /{command} 执行失败，未收到响应"))
+            command_display = reminder.get("text", command)
+            error_msg.chain.append(Plain(f"[指令任务] {command_display} 执行失败，未收到响应"))
             
             await self.context.send_message(original_msg_origin, error_msg)

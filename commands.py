@@ -4,6 +4,7 @@ from astrbot.api.star import Context
 from astrbot.api import logger
 from apscheduler.schedulers.base import JobLookupError
 from .utils import parse_datetime, save_reminder_data
+from .command_utils import CommandUtils
 
 class ReminderCommands:
     def __init__(self, star_instance):
@@ -44,7 +45,8 @@ class ReminderCommands:
                 for r in reminders:
                     if r.get("is_command_task", False):
                         # 指令任务，显示完整指令
-                        command_task_items.append(f"- /{r['text']} (时间: {r['datetime']})")
+                        command_text = r['text']
+                        command_task_items.append(f"- {command_text} (时间: {r['datetime']})")
                     elif r.get("is_task", False):
                         # 普通任务
                         task_items.append(f"- {r['text']} (时间: {r['datetime']})")
@@ -516,6 +518,7 @@ class ReminderCommands:
    - /rmd command /memory_config 8:00
    - /rmd command /weather 9:00 daily
    - /rmd command /news 18:00 mon weekly (每周一推送)
+   - /rmd command /rmd--ls 8:00 daily (使用--避免指令被错误分割)
 
 3. 查看提醒和任务：
    /rmd ls - 列出所有提醒和任务
@@ -562,20 +565,24 @@ class ReminderCommands:
         '''设置指令任务
         
         Args:
-            command(string): 要执行的指令，如"/memory_config"
+            command(string): 要执行的指令，如"/memory_config"或"/rmd--ls"（多个指令用--分隔）
             time_str(string): 时间，格式为 HH:MM 或 HHMM
             week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
             repeat(string): 可选，重复类型：daily,weekly,monthly,yearly
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
         '''
         try:
-            # 验证指令格式
-            if not command.startswith('/'):
-                yield event.plain_result("指令格式错误，必须以 / 开头，如：/memory_config")
+            # 解析多命令指令
+            display_command, commands = CommandUtils.parse_multi_command(command)
+            
+            # 验证命令列表
+            is_valid, error_msg = CommandUtils.validate_commands(commands)
+            if not is_valid:
+                yield event.plain_result(f"指令格式错误：{error_msg}")
                 return
             
-            # 去掉开头的 /
-            clean_command = command[1:] if command.startswith('/') else command
+            # 格式化显示命令
+            clean_display_command = CommandUtils.format_command_display(display_command, commands)
             
             # 解析时间
             try:
@@ -657,7 +664,8 @@ class ReminderCommands:
                 final_repeat = f"{repeat.lower()}_{holiday_type.lower()}"
             
             item = {
-                "text": clean_command,  # 存储不带 / 的指令
+                "text": clean_display_command,  # 存储格式化后的显示命令
+                "commands": commands,  # 存储完整的命令列表用于执行
                 "datetime": dt.strftime("%Y-%m-%d %H:%M"),
                 "user_name": "指令任务",  # 指令任务标识
                 "repeat": final_repeat,
@@ -705,7 +713,10 @@ class ReminderCommands:
             elif repeat == "yearly" and holiday_type == "holiday":
                 repeat_str = "每年的这一天重复，但仅法定节假日触发"
             
-            yield event.plain_result(f"已设置指令任务:\n指令: /{clean_command}\n时间: {dt.strftime('%Y-%m-%d %H:%M')}\n{start_str}{repeat_str}\n\n使用 /rmd ls 查看所有提醒和任务")
+            # 获取命令描述
+            command_desc = CommandUtils.get_command_description(commands)
+            
+            yield event.plain_result(f"已设置指令任务:\n{command_desc}\n时间: {dt.strftime('%Y-%m-%d %H:%M')}\n{start_str}{repeat_str}\n\n使用 /rmd ls 查看所有提醒和任务")
             
         except Exception as e:
             yield event.plain_result(f"设置指令任务时出错：{str(e)}")
