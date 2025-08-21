@@ -127,9 +127,10 @@ class ReminderMessageHandler:
 class TaskExecutor:
     """处理任务执行相关的功能"""
     
-    def __init__(self, context, wechat_platforms):
+    def __init__(self, context, wechat_platforms, config=None):
         self.context = context
         self.wechat_platforms = wechat_platforms
+        self.config = config or {}
         self.message_handler = ReminderMessageHandler(context, wechat_platforms)
     
     def _apply_safe_session_parser(self):
@@ -372,6 +373,10 @@ class TaskExecutor:
         # 应用安全解析器补丁
         self._apply_safe_session_parser()
         
+        # 获取配置
+        enable_context = self.config.get("enable_context", True)
+        max_context_count = self.config.get("max_context_count", 5)
+        
         try:
             # 获取对话上下文
             original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
@@ -379,17 +384,18 @@ class TaskExecutor:
             conversation = None
             contexts = []
             
-            if curr_cid:
-                conversation = await self.context.conversation_manager.get_conversation(original_msg_origin, curr_cid)
-                if conversation:
-                    contexts = json.loads(conversation.history)
-                    logger.info(f"提醒模式：找到用户对话，对话ID: {curr_cid}, 上下文长度: {len(contexts)}")
-            
-            # 如果没有对话或需要新建对话
-            if not curr_cid or not conversation:
-                curr_cid = await self.context.conversation_manager.new_conversation(original_msg_origin)
-                conversation = await self.context.conversation_manager.get_conversation(original_msg_origin, curr_cid)
-                logger.info(f"创建新对话，对话ID: {curr_cid}")
+            if enable_context:
+                if curr_cid:
+                    conversation = await self.context.conversation_manager.get_conversation(original_msg_origin, curr_cid)
+                    if conversation:
+                        contexts = json.loads(conversation.history)
+                        logger.info(f"任务模式：找到用户对话，对话ID: {curr_cid}, 上下文长度: {len(contexts)}")
+                
+                # 如果没有对话或需要新建对话
+                if not curr_cid or not conversation:
+                    curr_cid = await self.context.conversation_manager.new_conversation(original_msg_origin)
+                    conversation = await self.context.conversation_manager.get_conversation(original_msg_origin, curr_cid)
+                    logger.info(f"创建新对话，对话ID: {curr_cid}")
             
             # 检查是否是调用LLM函数的任务
             if task_text.startswith("请调用") and "函数" in task_text:
@@ -407,7 +413,7 @@ class TaskExecutor:
             response = await provider.text_chat(
                 prompt=prompt,
                 session_id=unified_msg_origin,
-                contexts=contexts,  # 使用用户现有的对话上下文
+                contexts=contexts[:max_context_count] if contexts and enable_context else [],  # 根据配置使用上下文
                 func_tool=func_tool,  # 添加函数工具管理器，让AI可以调用LLM函数
                 system_prompt=system_prompt  # 添加系统提示词
             )
@@ -441,8 +447,9 @@ class TaskExecutor:
             if need_send_result:
                 await self._send_task_result(unified_msg_origin, reminder, result_msg)
             
-            # 更新对话历史
-            await self._update_conversation_history(original_msg_origin, curr_cid, new_contexts)
+            # 只有在启用上下文时才更新对话历史
+            if enable_context:
+                await self._update_conversation_history(original_msg_origin, curr_cid, new_contexts)
             
             logger.info(f"Task executed: {task_text}")
             
@@ -927,38 +934,47 @@ class TaskExecutor:
 class ReminderExecutor:
     """处理提醒执行相关的功能"""
     
-    def __init__(self, context, wechat_platforms):
+    def __init__(self, context, wechat_platforms, config=None):
         self.context = context
         self.wechat_platforms = wechat_platforms
+        self.config = config or {}
         self.message_handler = ReminderMessageHandler(context, wechat_platforms)
     
     async def execute_reminder(self, unified_msg_origin: str, reminder: dict, provider):
         """执行提醒"""
         logger.info(f"Reminder Activated: {reminder['text']}, created by {unified_msg_origin}")
         
+        # 获取配置
+        enable_context = self.config.get("enable_context", True)
+        max_context_count = self.config.get("max_context_count", 5)
+        context_prompts = self.config.get("context_prompts", "")
+        
         # 获取对话上下文，以便LLM生成更自然的回复
-        try:
-            # 获取原始消息ID（去除用户隔离部分）
-            original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
-            curr_cid = await self.context.conversation_manager.get_curr_conversation_id(original_msg_origin)
-            conversation = None
-            contexts = []
-            
-            if curr_cid:
-                conversation = await self.context.conversation_manager.get_conversation(original_msg_origin, curr_cid)
-                if conversation:
-                    contexts = json.loads(conversation.history)
-                    logger.info(f"提醒模式：找到用户对话，对话ID: {curr_cid}, 上下文长度: {len(contexts)}")
-        except Exception as e:
-            logger.warning(f"提醒模式：获取对话上下文失败: {str(e)}")
-            contexts = []
+        contexts = []
+        curr_cid = None
+        conversation = None
+        
+        if enable_context:
+            try:
+                # 获取原始消息ID（去除用户隔离部分）
+                original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
+                curr_cid = await self.context.conversation_manager.get_curr_conversation_id(original_msg_origin)
+                
+                if curr_cid:
+                    conversation = await self.context.conversation_manager.get_conversation(original_msg_origin, curr_cid)
+                    if conversation:
+                        contexts = json.loads(conversation.history)
+                        logger.info(f"提醒模式：找到用户对话，对话ID: {curr_cid}, 上下文长度: {len(contexts)}")
+            except Exception as e:
+                logger.warning(f"提醒模式：获取对话上下文失败: {str(e)}")
+                contexts = []
         
         # 构建更丰富的提醒提示词
         user_name = reminder.get("user_name", "用户")
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
         
-        # 基于上下文量身定制提示词
-        if len(contexts) > 2:
+        # 根据配置决定使用哪种提示词
+        if enable_context and len(contexts) > 2:
             # 有对话历史，可以更自然地引入提醒
             prompt = f"""你现在需要向{user_name}发送一条预设的提醒。
 
@@ -970,31 +986,40 @@ class ReminderExecutor:
 
 直接输出你要发送的提醒内容，无需说明这是提醒。"""
         else:
-            # 没有太多对话历史，使用变化的表达方式
-            reminder_styles = [
-                f"嘿，{user_name}！这是你设置的提醒：{reminder['text']}",
-                f"提醒时间到了！{reminder['text']}",
-                f"别忘了：{reminder['text']}",
-                f"温馨提醒，{user_name}：{reminder['text']}",
-                f"时间提醒：{reminder['text']}",
-                f"叮咚！{reminder['text']}",
-            ]
-            chosen_style = random.choice(reminder_styles)
-            prompt = f"""你需要提醒用户"{reminder['text']}"。
+            # 使用配置的提示词模板或默认模板
+            if context_prompts:
+                # 使用配置的提示词模板
+                prompt = context_prompts.format(
+                    user_name=user_name,
+                    reminder_text=reminder['text'],
+                    current_time=current_time
+                )
+            else:
+                # 使用默认的提示词模板
+                reminder_styles = [
+                    f"嘿，{user_name}！这是你设置的提醒：{reminder['text']}",
+                    f"提醒时间到了！{reminder['text']}",
+                    f"别忘了：{reminder['text']}",
+                    f"温馨提醒，{user_name}：{reminder['text']}",
+                    f"时间提醒：{reminder['text']}",
+                    f"叮咚！{reminder['text']}",
+                ]
+                chosen_style = random.choice(reminder_styles)
+                prompt = f"""你需要提醒用户"{reminder['text']}"。
 请以自然、友好的方式表达这个提醒，可以参考但不限于这种表达方式："{chosen_style}"。
 根据提醒的内容，调整你的表达，使其听起来自然且贴心。直接输出你要发送的提醒内容，无需说明这是提醒。"""
         
         response = await provider.text_chat(
             prompt=prompt,
             session_id=unified_msg_origin,
-            contexts=contexts[:5] if contexts else []  # 使用最近的5条对话作为上下文
+            contexts=contexts[:max_context_count] if contexts and enable_context else []  # 根据配置使用上下文
         )
         
         # 发送提醒消息
         await self.message_handler.send_reminder_message(unified_msg_origin, reminder, response.completion_text, is_task=False)
         
-        # 如果有对话上下文，记录这次提醒到对话历史
-        if curr_cid and conversation:
+        # 如果有对话上下文且启用上下文功能，记录这次提醒到对话历史
+        if curr_cid and conversation and enable_context:
             try:
                 new_contexts = contexts.copy()
                 # 添加系统消息表示这是一个提醒
@@ -1019,9 +1044,10 @@ class ReminderExecutor:
 class SimpleMessageSender:
     """处理简单消息发送"""
     
-    def __init__(self, context, wechat_platforms):
+    def __init__(self, context, wechat_platforms, config=None):
         self.context = context
         self.wechat_platforms = wechat_platforms
+        self.config = config or {}
         self.message_handler = ReminderMessageHandler(context, wechat_platforms)
     
     async def send_simple_message(self, unified_msg_origin: str, reminder: dict, is_task: bool = False):

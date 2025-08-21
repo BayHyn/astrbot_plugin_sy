@@ -20,7 +20,7 @@ else:
     logger.info("使用现有全局调度器注册表")
 
 class ReminderScheduler:
-    def __new__(cls, context, reminder_data, data_file, unique_session=False):
+    def __new__(cls, context, reminder_data, data_file, unique_session=False, config=None):
         # 使用实例属性存储初始化状态
         instance = super(ReminderScheduler, cls).__new__(cls)
         instance._first_init = True  # 首次初始化
@@ -28,11 +28,12 @@ class ReminderScheduler:
         logger.info("创建 ReminderScheduler 实例")
         return instance
     
-    def __init__(self, context, reminder_data, data_file, unique_session=False):
+    def __init__(self, context, reminder_data, data_file, unique_session=False, config=None):
         self.context = context
         self.reminder_data = reminder_data
         self.data_file = data_file
         self.unique_session = unique_session
+        self.config = config or {}
         
         # 定义微信相关平台列表，用于特殊处理
         self.wechat_platforms = ["gewechat", "wechatpadpro", "wecom"]
@@ -323,9 +324,9 @@ class ReminderScheduler:
         logger.info(f"开始执行{'任务' if is_task else '提醒'}: {reminder['text']} 在 {unified_msg_origin}")
         
         # 初始化处理器
-        task_executor = TaskExecutor(self.context, self.wechat_platforms)
-        reminder_executor = ReminderExecutor(self.context, self.wechat_platforms)
-        simple_sender = SimpleMessageSender(self.context, self.wechat_platforms)
+        task_executor = TaskExecutor(self.context, self.wechat_platforms, self.config)
+        reminder_executor = ReminderExecutor(self.context, self.wechat_platforms, self.config)
+        simple_sender = SimpleMessageSender(self.context, self.wechat_platforms, self.config)
         
         if provider:
             logger.info(f"使用提供商: {provider.meta().type}")

@@ -5,5 +5,28 @@
         "hint": "启用后，在群组或频道中，每个人的提醒和任务都是独立的。不同用户之间无法看到和操作对方的提醒和任务。",
         "obvious_hint": true,
         "default": false
+    },
+    "enable_context": {
+        "description": "启用上下文功能",
+        "type": "bool",
+        "hint": "启用后，提醒和任务执行时会使用用户的对话上下文，让AI生成更自然的回复。关闭后使用预设的提示词模板。",
+        "obvious_hint": true,
+        "default": true
+    },
+    "context_prompts": {
+        "description": "关闭上下文时的提示词模板",
+        "type": "text",
+        "hint": "当禁用上下文功能时，用于生成提醒的提示词模板。可以使用{user_name}、{reminder_text}、{current_time}等占位符。",
+        "obvious_hint": false,
+        "default": "你需要提醒用户\"{reminder_text}\"。\n请以自然、友好的方式表达这个提醒，可以参考这种表达方式：\n- 嘿，{user_name}！这是你设置的提醒：{reminder_text}\n- 提醒时间到了！{reminder_text}\n- 别忘了：{reminder_text}\n\n根据提醒的内容，调整你的表达，使其听起来自然且贴心。直接输出你要发送的提醒内容，无需说明这是提醒。",
+        "editor_mode": true,
+        "editor_language": "text"
+    },
+    "max_context_count": {
+        "description": "最大上下文数量",
+        "type": "int",
+        "hint": "启用上下文功能时，最多使用用户最近的多少条对话作为上下文。建议设置为3-10之间的值。",
+        "obvious_hint": false,
+        "default": 5
     }
 } 

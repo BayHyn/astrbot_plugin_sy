@@ -9,7 +9,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.2")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.3")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -28,7 +28,7 @@ class SmartReminder(Star):
         self.reminder_data = load_reminder_data(self.data_file)
         
         # 初始化调度器
-        self.scheduler_manager = ReminderScheduler(context, self.reminder_data, self.data_file, self.unique_session)
+        self.scheduler_manager = ReminderScheduler(context, self.reminder_data, self.data_file, self.unique_session, self.config)
         
         # 初始化工具
         self.tools = ReminderTools(self)
@@ -38,6 +38,8 @@ class SmartReminder(Star):
         
         # 记录配置信息
         logger.info(f"智能提醒插件启动成功，会话隔离：{'启用' if self.unique_session else '禁用'}")
+        logger.info(f"上下文功能：{'启用' if self.config.get('enable_context', True) else '禁用'}")
+        logger.info(f"最大上下文数量：{self.config.get('max_context_count', 5)}")
 
     @filter.llm_tool(name="set_reminder")
     async def set_reminder(self, event, text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):
