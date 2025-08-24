@@ -1,9 +1,10 @@
 from astrbot.api.event import filter, AstrMessageEvent, MessageEventResult
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, register, StarTools
 from astrbot.api.message_components import *
 from astrbot.api.event.filter import command, command_group
 from astrbot.api import logger, AstrBotConfig
 import os
+from pathlib import Path
 from .utils import load_reminder_data
 from .scheduler import ReminderScheduler
 from .tools import ReminderTools
@@ -18,11 +19,57 @@ class SmartReminder(Star):
         self.config = config or {}
         self.unique_session = self.config.get("unique_session", False)
         
-        # 使用data目录下的数据文件，而非插件自身目录
-        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-        # 确保目录存在
-        os.makedirs(os.path.join(data_dir, "reminders"), exist_ok=True)
-        self.data_file = os.path.join(data_dir, "reminders", "reminder_data.json")
+        # 数据文件路径处理 - 符合框架规范并保持向后兼容
+        # 首先检查旧位置是否有数据，如果有则迁移到新位置
+        old_data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+        old_data_file = os.path.join(old_data_dir, "reminders", "reminder_data.json")
+        
+        # 尝试获取新的框架规范路径
+        try:
+            plugin_data_dir = StarTools.get_data_dir("ai_reminder")
+            new_data_file = plugin_data_dir / "reminder_data.json"
+            
+            # 检查旧位置是否存在数据文件
+            if os.path.exists(old_data_file):
+                # 旧位置有数据，执行数据迁移
+                logger.info(f"检测到旧数据文件，开始数据迁移...")
+                logger.info(f"旧位置: {old_data_file}")
+                logger.info(f"新位置: {new_data_file}")
+                
+                # 确保新目录存在
+                plugin_data_dir.mkdir(parents=True, exist_ok=True)
+                
+                # 读取旧数据
+                import shutil
+                try:
+                    # 复制文件到新位置
+                    shutil.copy2(old_data_file, new_data_file)
+                    logger.info(f"数据迁移成功: {old_data_file} -> {new_data_file}")
+                    
+                    # 删除旧文件
+                    os.remove(old_data_file)
+                    logger.info(f"旧数据文件已删除: {old_data_file}")
+                    
+                    # 使用新位置
+                    self.data_file = new_data_file
+                    logger.info(f"使用新的框架规范数据目录: {self.data_file}")
+                    
+                except Exception as e:
+                    logger.error(f"数据迁移失败: {e}")
+                    # 迁移失败，继续使用旧位置
+                    self.data_file = old_data_file
+                    logger.info(f"迁移失败，继续使用旧数据目录: {self.data_file}")
+            else:
+                # 旧位置没有数据，直接使用新位置
+                self.data_file = new_data_file
+                logger.info(f"使用框架规范数据目录: {self.data_file}")
+                
+        except Exception as e:
+            # 如果框架方法失败，回退到旧的数据目录
+            os.makedirs(os.path.join(old_data_dir, "reminders"), exist_ok=True)
+            self.data_file = old_data_file
+            logger.info(f"回退到兼容数据目录: {self.data_file}")
+            logger.warning(f"框架数据目录获取失败: {e}")
         
         # 初始化数据存储
         self.reminder_data = load_reminder_data(self.data_file)

@@ -96,7 +96,9 @@ class CommandUtils:
         Returns:
             str: 命令描述
         """
+        # 现在只处理单个指令，commands列表应该只有一个元素
         if len(commands) == 1:
             return f"执行指令：{commands[0]}"
         else:
-            return f"执行多个指令：{' '.join(commands)}" 
+            # 这种情况理论上不应该发生，但为了安全起见
+            return f"执行指令：{' '.join(commands)}" 

@@ -79,10 +79,57 @@ async def save_reminder_data(data_file: str, reminder_data: dict):
 # 法定节假日相关功能
 class HolidayManager:
     def __init__(self):
-        # 确保目录存在
-        data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
-        os.makedirs(os.path.join(data_dir, "holiday_data"), exist_ok=True)
-        self.holiday_cache_file = os.path.join(data_dir, "holiday_data", "holiday_cache.json")
+        # 数据文件路径处理 - 符合框架规范并保持向后兼容
+        old_data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data")
+        old_holiday_file = os.path.join(old_data_dir, "holiday_data", "holiday_cache.json")
+        
+        try:
+            from astrbot.api.star import StarTools
+            plugin_data_dir = StarTools.get_data_dir("ai_reminder")
+            new_holiday_file = plugin_data_dir / "holiday_cache.json"
+            
+            # 检查旧位置是否存在节假日缓存文件
+            if os.path.exists(old_holiday_file):
+                # 旧位置有数据，执行数据迁移
+                logger.info(f"检测到旧节假日缓存文件，开始数据迁移...")
+                logger.info(f"旧位置: {old_holiday_file}")
+                logger.info(f"新位置: {new_holiday_file}")
+                
+                # 确保新目录存在
+                plugin_data_dir.mkdir(parents=True, exist_ok=True)
+                
+                # 迁移节假日缓存文件
+                import shutil
+                try:
+                    # 复制文件到新位置
+                    shutil.copy2(old_holiday_file, new_holiday_file)
+                    logger.info(f"节假日缓存迁移成功: {old_holiday_file} -> {new_holiday_file}")
+                    
+                    # 删除旧文件
+                    os.remove(old_holiday_file)
+                    logger.info(f"旧节假日缓存文件已删除: {old_holiday_file}")
+                    
+                    # 使用新位置
+                    self.holiday_cache_file = new_holiday_file
+                    logger.info(f"使用新的框架规范节假日缓存目录: {self.holiday_cache_file}")
+                    
+                except Exception as e:
+                    logger.error(f"节假日缓存迁移失败: {e}")
+                    # 迁移失败，继续使用旧位置
+                    self.holiday_cache_file = old_holiday_file
+                    logger.info(f"迁移失败，继续使用旧节假日缓存目录: {self.holiday_cache_file}")
+            else:
+                # 旧位置没有数据，直接使用新位置
+                self.holiday_cache_file = new_holiday_file
+                logger.info(f"使用框架规范节假日缓存目录: {self.holiday_cache_file}")
+                
+        except Exception as e:
+            # 如果框架方法失败，回退到旧的数据目录
+            os.makedirs(os.path.join(old_data_dir, "holiday_data"), exist_ok=True)
+            self.holiday_cache_file = old_holiday_file
+            logger.info(f"回退到兼容节假日缓存目录: {self.holiday_cache_file}")
+            logger.warning(f"框架数据目录获取失败: {e}")
+        
         self.holiday_data = self._load_holiday_data()
         
     def _load_holiday_data(self) -> dict:
