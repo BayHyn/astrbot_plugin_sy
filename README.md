@@ -12,6 +12,7 @@
 - 支持多种重复模式：每天、每周、每月、每年
 - 支持法定节假日判断，可设置仅在工作日或节假日触发的提醒和任务
 - 支持会话隔离，群聊中每个成员可以有独立的提醒和任务
+- **支持远程群聊管理，可以在当前群聊中为其他群聊设置、查看和管理任务**
 - 简单的命令管理系统
 - 持久化存储提醒和任务数据
 
@@ -70,6 +71,8 @@
 - `/rmd command /news 18:00 mon weekly`（每周一18点获取新闻）
 - `/rmd command /rmd--ls 8:00 daily`（使用--避免指令被错误分割）
 - `/rmd command /complex--command 10:00`（执行复杂指令，最多等待20秒）
+- `/rmd command /rmd--ls----before--每日提醒 8:00 daily`（自定义标识放在开头）
+- `/rmd command /rmd--ls----after--执行完成 8:00 daily`（自定义标识放在末尾）
 
 1. 查看所有提醒和任务：
 /rmd ls
@@ -81,6 +84,42 @@
 1. 查看帮助信息：
 /rmd help
 
+### 远程群聊管理
+
+插件支持远程群聊管理功能，可以在当前群聊中为其他群聊设置、查看和管理任务：
+
+**远程群聊命令列表：**
+
+1. 在指定群聊中添加提醒：
+/rmdg add <群聊ID> <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+例如：
+- `/rmdg add 1234567890 写周报 8:05 daily`
+
+2. 在指定群聊中添加任务：
+/rmdg task <群聊ID> <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+例如：
+- `/rmdg task 1234567890 发送天气预报 8:00 daily`
+
+3. 在指定群聊中添加指令任务：
+/rmdg command <群聊ID> <指令> <时间> [开始星期] [重复类型] [--holiday_type=...]
+例如：
+- `/rmdg command 1234567890 /weather 9:00 daily`
+- `/rmdg command 1234567890 /rmd--ls----before--每日提醒 8:00 daily`（自定义标识放在开头）
+- `/rmdg command 1234567890 /rmd--ls----after--执行完成 8:00 daily`（自定义标识放在末尾）
+
+4. 查看指定群聊的提醒和任务：
+/rmdg ls <群聊ID>
+例如：
+- `/rmdg ls 1234567890`
+
+5. 删除指定群聊中的提醒或任务：
+/rmdg rm <群聊ID> <序号>
+例如：
+- `/rmdg rm 1234567890 1`
+
+6. 查看远程群聊帮助信息：
+/rmdg help
+
 ### 使用演示
 
 ![提醒演示](https://sywb.top/Staticfiles/pic/ys1.png)
@@ -89,6 +128,11 @@
 ![指令任务](https://sywb.top/Staticfiles/pic/ys6.png)
 ![复杂指令](https://sywb.top/Staticfiles/pic/ys7.png)
 ![人性化回复](https://sywb.top/Staticfiles/pic/ys4.png)
+![群聊1](https://sywb.top/Staticfiles/pic/ys8.jpg)
+![群聊2](https://sywb.top/Staticfiles/pic/ys9.jpg)
+![自义定文字](https://sywb.top/Staticfiles/pic/ys10.png)
+![自义定文字2](https://sywb.top/Staticfiles/pic/ys11.png)
+
 
 ### 重复类型说明
 
@@ -161,6 +205,20 @@
 /rmd command /rmd--ls 08:01 daily
 ```
 
+### 自定义标识功能
+指令任务支持自定义标识，使用 `----` 分隔符可以自定义显示的文字和位置：
+
+```bash
+# 自定义标识放在开头
+/rmd command /rmd--ls----before--每日提醒 8:00 daily
+
+# 自定义标识放在末尾
+/rmd command /rmd--ls----after--执行完成 8:00 daily
+
+# 位置可选：before(开头)、after(末尾)、start(开头)、end(末尾)
+# 如果不使用 ---- 分隔符，默认显示 [指令任务]
+```
+
 ### 长时间执行支持
 指令任务现在支持最多20秒的执行时间，适合以下场景：
 - 需要调用外部API的指令
@@ -189,7 +247,21 @@
 ## 作者
 
 - 作者：kjqwdw
-- 版本：v1.2.5
+- 版本：v1.2.8
+
+## 更新日志
+
+### v1.2.8 (最新版本)
+**新增功能：**
+- **新增远程群聊管理功能**：可以在当前群聊中为其他群聊设置、查看和管理任务
+- **新增 `/rmdg` 指令组**：包含完整的远程群聊管理命令
+- **支持跨群聊任务管理**：无需切换到目标群聊即可管理任务
+- **保持会话隔离兼容性**：远程群聊管理功能完全兼容会话隔离设置
+
+**技术改进：**
+- 优化了代码结构，避免重复代码
+- 增强了错误处理和用户提示
+- 完善了帮助文档和示例
 
 ## 支持
 

@@ -10,7 +10,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.5")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.7")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -227,12 +227,90 @@ class SmartReminder(Star):
         '''设置指令任务
         
         Args:
-            command(string): 要执行的指令，如"/memory_config"
+            command(string): 要执行的指令，如"/memory_config"或"/rmd--ls----before--要说的话"或"/rmd--ls----after--要说的话"
             time_str(string): 时间，格式为 HH:MM 或 HHMM
             week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
             repeat(string): 可选，重复类型：daily,weekly,monthly,yearly
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
         '''
         async for result in self.commands.add_command_task(event, command, time_str, week, repeat, holiday_type):
+            yield result
+
+    # 远程群聊指令组
+    @command_group("rmdg")
+    def rmdg(self):
+        '''远程群聊提醒相关命令'''
+        pass
+
+    @rmdg.command("add")
+    async def add_remote_reminder(self, event: AstrMessageEvent, group_id: str, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
+        '''在指定群聊中手动添加提醒
+        
+        Args:
+            group_id(string): 群聊ID
+            text(string): 提醒内容
+            time_str(string): 时间，格式为 HH:MM 或 HHMM
+            week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly或带节假日类型的组合（如daily workday）
+            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+        '''
+        async for result in self.commands.add_remote_reminder(event, group_id, text, time_str, week, repeat, holiday_type):
+            yield result
+
+    @rmdg.command("task")
+    async def add_remote_task(self, event: AstrMessageEvent, group_id: str, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
+        '''在指定群聊中手动添加任务
+        
+        Args:
+            group_id(string): 群聊ID
+            text(string): 任务内容
+            time_str(string): 时间，格式为 HH:MM 或 HHMM
+            week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly或带节假日类型的组合（如daily workday）
+            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+        '''
+        async for result in self.commands.add_remote_task(event, group_id, text, time_str, week, repeat, holiday_type):
+            yield result
+
+    @rmdg.command("command")
+    async def add_remote_command_task(self, event: AstrMessageEvent, group_id: str, command: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
+        '''在指定群聊中设置指令任务
+        
+        Args:
+            group_id(string): 群聊ID
+            command(string): 要执行的指令，如"/memory_config"或"/rmd--ls----before--要说的话"或"/rmd--ls----after--要说的话"
+            time_str(string): 时间，格式为 HH:MM 或 HHMM
+            week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly
+            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+        '''
+        async for result in self.commands.add_remote_command_task(event, group_id, command, time_str, week, repeat, holiday_type):
+            yield result
+
+    @rmdg.command("help")
+    async def show_remote_help(self, event: AstrMessageEvent):
+        '''显示远程群聊帮助信息'''
+        async for result in self.commands.show_remote_help(event):
+            yield result
+
+    @rmdg.command("ls")
+    async def list_remote_reminders(self, event: AstrMessageEvent, group_id: str):
+        '''列出指定群聊中的所有提醒和任务
+        
+        Args:
+            group_id(string): 群聊ID
+        '''
+        async for result in self.commands.list_remote_reminders(event, group_id):
+            yield result
+
+    @rmdg.command("rm")
+    async def remove_remote_reminder(self, event: AstrMessageEvent, group_id: str, index: int):
+        '''删除指定群聊中的提醒或任务
+        
+        Args:
+            group_id(string): 群聊ID
+            index(int): 提醒或任务的序号
+        '''
+        async for result in self.commands.remove_remote_reminder(event, group_id, index):
             yield result
 

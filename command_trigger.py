@@ -147,7 +147,22 @@ class CommandTrigger:
                 
                 # 添加指令任务标识和结果
                 command_display = reminder.get("text", command)
-                forward_msg.chain.append(Plain(f"[指令任务] {command_display}\n"))
+                
+                # 检查是否有自定义标识
+                custom_identifier = reminder.get("custom_identifier")
+                if custom_identifier and custom_identifier.get("text"):
+                    custom_text = custom_identifier["text"]
+                    position = custom_identifier.get("position", "start")
+                    
+                    if position == "start":
+                        # 放在开头，不加回车
+                        forward_msg.chain.append(Plain(f"[{custom_text}] {command_display}\n"))
+                    else:
+                        # 放在末尾，加在回车后面
+                        forward_msg.chain.append(Plain(f"[指令任务] {command_display}\n[{custom_text}]"))
+                else:
+                    # 默认标识
+                    forward_msg.chain.append(Plain(f"[指令任务] {command_display}\n"))
                 
                 # 添加捕获到的消息内容
                 for component in captured_msg.chain:
@@ -184,6 +199,21 @@ class CommandTrigger:
                     error_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
             
             command_display = reminder.get("text", command)
-            error_msg.chain.append(Plain(f"[指令任务] {command_display} 执行失败，未收到响应"))
+            
+            # 检查是否有自定义标识
+            custom_identifier = reminder.get("custom_identifier")
+            if custom_identifier and custom_identifier.get("text"):
+                custom_text = custom_identifier["text"]
+                position = custom_identifier.get("position", "start")
+                
+                if position == "start":
+                    # 放在开头
+                    error_msg.chain.append(Plain(f"[{custom_text}] {command_display} 执行失败，未收到响应"))
+                else:
+                    # 放在末尾
+                    error_msg.chain.append(Plain(f"[指令任务] {command_display} 执行失败，未收到响应 [{custom_text}]"))
+            else:
+                # 默认标识
+                error_msg.chain.append(Plain(f"[指令任务] {command_display} 执行失败，未收到响应"))
             
             await self.context.send_message(original_msg_origin, error_msg)
