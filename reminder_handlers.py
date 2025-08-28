@@ -11,9 +11,10 @@ from astrbot.core.platform.astr_message_event import AstrMessageEvent, MessageSe
 class ReminderMessageHandler:
     """处理提醒消息的发送和格式化"""
     
-    def __init__(self, context, wechat_platforms):
+    def __init__(self, context, wechat_platforms, config=None):
         self.context = context
         self.wechat_platforms = wechat_platforms
+        self.config = config or {}
     
     def is_private_chat(self, unified_msg_origin: str) -> bool:
         """判断是否为私聊"""
@@ -84,11 +85,20 @@ class ReminderMessageHandler:
         # 如果不是隔离格式或无法解析，返回原始ID
         return session_id
     
-    def create_at_message(self, reminder: dict, original_msg_origin: str) -> MessageChain:
+    def create_at_message(self, reminder: dict, original_msg_origin: str, is_task: bool = False, is_command_task: bool = False) -> MessageChain:
         """创建@消息"""
         msg = MessageChain()
         
-        if not self.is_private_chat(original_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
+        # 根据配置决定是否添加@
+        should_at = False
+        if is_command_task:
+            should_at = self.config.get("enable_command_at", False)
+        elif is_task:
+            should_at = self.config.get("enable_task_at", True)
+        else:
+            should_at = self.config.get("enable_reminder_at", True)
+        
+        if should_at and not self.is_private_chat(original_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
             if original_msg_origin.startswith("aiocqhttp"):
                 msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
             elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
@@ -104,12 +114,12 @@ class ReminderMessageHandler:
         
         return msg
     
-    async def send_reminder_message(self, unified_msg_origin: str, reminder: dict, content: str, is_task: bool = False):
+    async def send_reminder_message(self, unified_msg_origin: str, reminder: dict, content: str, is_task: bool = False, is_command_task: bool = False):
         """发送提醒消息"""
         original_msg_origin = self.get_original_session_id(unified_msg_origin)
         
         # 构建消息链
-        msg = self.create_at_message(reminder, original_msg_origin)
+        msg = self.create_at_message(reminder, original_msg_origin, is_task, is_command_task)
         
         # 添加内容
         if is_task:
@@ -117,7 +127,7 @@ class ReminderMessageHandler:
         else:
             msg.chain.append(Plain("[提醒] " + content))
         
-        logger.info(f"尝试发送{'任务' if is_task else '提醒'}消息到: {original_msg_origin} (原始ID: {unified_msg_origin})")
+        logger.info(f"尝试发送{'指令任务' if is_command_task else '任务' if is_task else '提醒'}消息到: {original_msg_origin} (原始ID: {unified_msg_origin})")
         send_result = await self.context.send_message(original_msg_origin, msg)
         logger.info(f"消息发送结果: {send_result}")
         
@@ -131,7 +141,7 @@ class TaskExecutor:
         self.context = context
         self.wechat_platforms = wechat_platforms
         self.config = config or {}
-        self.message_handler = ReminderMessageHandler(context, wechat_platforms)
+        self.message_handler = ReminderMessageHandler(context, wechat_platforms, config)
     
     def _apply_safe_session_parser(self):
         """应用安全的会话解析器补丁"""
@@ -364,12 +374,6 @@ class TaskExecutor:
         task_text = reminder['text']
         logger.info(f"Task Activated: {task_text}, attempting to execute for {unified_msg_origin}")
         
-        # 检查是否是指令任务
-        if reminder.get("is_command_task", False):
-            logger.info(f"检测到指令任务，直接执行指令: {task_text}")
-            await self._execute_command_task(unified_msg_origin, reminder, task_text)
-            return
-        
         # 应用安全解析器补丁
         self._apply_safe_session_parser()
         
@@ -470,7 +474,7 @@ class TaskExecutor:
         try:
             # 创建指令触发器
             from .command_trigger import CommandTrigger
-            trigger = CommandTrigger(self.context, self.wechat_platforms)
+            trigger = CommandTrigger(self.context, self.wechat_platforms, self.config)
             
             # 直接触发指令并转发结果
             await trigger.trigger_and_forward_command(unified_msg_origin, reminder, command)
@@ -892,8 +896,16 @@ class TaskExecutor:
         # 构建最终的消息链，先添加@再添加结果
         final_msg = MessageChain()
         
+        # 根据配置决定是否添加@
+        is_command_task = reminder.get("is_command_task", False)
+        should_at = False
+        if is_command_task:
+            should_at = self.config.get("enable_command_at", False)
+        else:
+            should_at = self.config.get("enable_task_at", True)
+        
         # 添加@，复用提醒模式中的@逻辑
-        if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
+        if should_at and not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
             if original_msg_origin.startswith("aiocqhttp"):
                 final_msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
             elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
@@ -938,7 +950,7 @@ class ReminderExecutor:
         self.context = context
         self.wechat_platforms = wechat_platforms
         self.config = config or {}
-        self.message_handler = ReminderMessageHandler(context, wechat_platforms)
+        self.message_handler = ReminderMessageHandler(context, wechat_platforms, config)
     
     async def execute_reminder(self, unified_msg_origin: str, reminder: dict, provider):
         """执行提醒"""
@@ -1048,17 +1060,26 @@ class SimpleMessageSender:
         self.context = context
         self.wechat_platforms = wechat_platforms
         self.config = config or {}
-        self.message_handler = ReminderMessageHandler(context, wechat_platforms)
+        self.message_handler = ReminderMessageHandler(context, wechat_platforms, config)
     
-    async def send_simple_message(self, unified_msg_origin: str, reminder: dict, is_task: bool = False):
+    async def send_simple_message(self, unified_msg_origin: str, reminder: dict, is_task: bool = False, is_command_task: bool = False):
         """发送简单消息（当没有提供商时使用）"""
         logger.warning(f"没有可用的提供商，使用简单消息")
         
         # 构建基础消息链
         msg = MessageChain()
         
+        # 根据配置决定是否添加@
+        should_at = False
+        if is_command_task:
+            should_at = self.config.get("enable_command_at", False)
+        elif is_task:
+            should_at = self.config.get("enable_task_at", True)
+        else:
+            should_at = self.config.get("enable_reminder_at", True)
+        
         # 如果不是私聊且存在创建者ID，则添加@（明确使用私聊判断）
-        if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
+        if should_at and not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
             if unified_msg_origin.startswith("aiocqhttp"):
                 msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
             elif any(unified_msg_origin.startswith(platform) for platform in self.wechat_platforms):
@@ -1072,7 +1093,7 @@ class SimpleMessageSender:
                 # 其他平台的@实现
                 msg.chain.append(Plain(f"@{reminder['creator_id']} "))
         
-        prefix = "任务: " if is_task else "提醒: "
+        prefix = "指令任务: " if is_command_task else "任务: " if is_task else "提醒: "
         msg.chain.append(Plain(f"{prefix}{reminder['text']}"))
         
         # 获取原始消息ID（去除用户隔离部分）

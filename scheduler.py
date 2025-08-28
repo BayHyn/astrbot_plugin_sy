@@ -320,8 +320,7 @@ class ReminderScheduler:
         
         # 区分提醒和任务
         is_task = reminder.get("is_task", False)
-        
-        logger.info(f"开始执行{'任务' if is_task else '提醒'}: {reminder['text']} 在 {unified_msg_origin}")
+        is_command_task = reminder.get("is_command_task", False)
         
         # 初始化处理器
         task_executor = TaskExecutor(self.context, self.wechat_platforms, self.config)
@@ -330,8 +329,11 @@ class ReminderScheduler:
         
         if provider:
             logger.info(f"使用提供商: {provider.meta().type}")
-            if is_task:
-                # 任务模式：模拟用户发送消息，让AI执行任务
+            if is_command_task:
+                # 指令任务模式：直接执行指令，不调用LLM
+                await task_executor._execute_command_task(unified_msg_origin, reminder, reminder['text'])
+            elif is_task:
+                # 普通任务模式：模拟用户发送消息，让AI执行任务
                 func_tool = self.context.get_llm_tool_manager()
                 logger.info(f"LLM工具管理器加载成功: {func_tool is not None}")
                 await task_executor.execute_task(unified_msg_origin, reminder, provider, func_tool)
@@ -340,7 +342,7 @@ class ReminderScheduler:
                 await reminder_executor.execute_reminder(unified_msg_origin, reminder, provider)
         else:
             logger.warning(f"没有可用的提供商，使用简单消息")
-            await simple_sender.send_simple_message(unified_msg_origin, reminder, is_task)
+            await simple_sender.send_simple_message(unified_msg_origin, reminder, is_task, is_command_task)
         
         # 如果是一次性任务（非重复任务），执行后从数据中删除
         if reminder.get("repeat", "none") == "none":

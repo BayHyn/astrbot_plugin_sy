@@ -10,7 +10,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.4")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.5")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -18,6 +18,11 @@ class SmartReminder(Star):
         # 保存配置
         self.config = config or {}
         self.unique_session = self.config.get("unique_session", False)
+        
+        # @功能配置
+        self.enable_reminder_at = self.config.get("enable_reminder_at", True)
+        self.enable_task_at = self.config.get("enable_task_at", True)
+        self.enable_command_at = self.config.get("enable_command_at", False)
         
         # 数据文件路径处理 - 符合框架规范并保持向后兼容
         # 首先检查旧位置是否有数据，如果有则迁移到新位置
@@ -87,6 +92,9 @@ class SmartReminder(Star):
         logger.info(f"智能提醒插件启动成功，会话隔离：{'启用' if self.unique_session else '禁用'}")
         logger.info(f"上下文功能：{'启用' if self.config.get('enable_context', True) else '禁用'}")
         logger.info(f"最大上下文数量：{self.config.get('max_context_count', 5)}")
+        logger.info(f"提醒@功能：{'启用' if self.enable_reminder_at else '禁用'}")
+        logger.info(f"任务@功能：{'启用' if self.enable_task_at else '禁用'}")
+        logger.info(f"指令任务@功能：{'启用' if self.enable_command_at else '禁用'}")
 
     @filter.llm_tool(name="set_reminder")
     async def set_reminder(self, event, text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):

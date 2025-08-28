@@ -9,9 +9,10 @@ from .event_factory import EventFactory
 class CommandTrigger:
     """指令触发器，用于触发其他插件指令并转发结果"""
     
-    def __init__(self, context, wechat_platforms):
+    def __init__(self, context, wechat_platforms, config=None):
         self.context = context
         self.wechat_platforms = wechat_platforms
+        self.config = config or {}
         self.captured_messages = []  # 存储捕获到的消息
         self.original_send_method = None  # 保存原始的send方法
         self.target_event = None  # 目标事件对象
@@ -119,7 +120,7 @@ class CommandTrigger:
             
             # 转发捕获到的消息
             from .reminder_handlers import ReminderMessageHandler
-            message_handler = ReminderMessageHandler(self.context, self.wechat_platforms)
+            message_handler = ReminderMessageHandler(self.context, self.wechat_platforms, self.config)
             
             for i, captured_msg in enumerate(captured_messages):
                 logger.info(f"转发第 {i+1} 条消息，包含 {len(captured_msg.chain)} 个组件")
@@ -131,7 +132,8 @@ class CommandTrigger:
                 forward_msg = MessageChain()
                 
                 # 添加@消息（如果需要）
-                if not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
+                should_at = self.config.get("enable_command_at", False)
+                if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
                     if original_msg_origin.startswith("aiocqhttp"):
                         from astrbot.api.message_components import At
                         forward_msg.chain.append(At(qq=reminder["creator_id"]))
@@ -162,13 +164,14 @@ class CommandTrigger:
             
             # 发送执行失败的提示
             from .reminder_handlers import ReminderMessageHandler
-            message_handler = ReminderMessageHandler(self.context, self.wechat_platforms)
+            message_handler = ReminderMessageHandler(self.context, self.wechat_platforms, self.config)
             original_msg_origin = message_handler.get_original_session_id(unified_msg_origin)
             
             error_msg = MessageChain()
             
             # 添加@消息（如果需要）
-            if not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
+            should_at = self.config.get("enable_command_at", False)
+            if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
                 if original_msg_origin.startswith("aiocqhttp"):
                     from astrbot.api.message_components import At
                     error_msg.chain.append(At(qq=reminder["creator_id"]))

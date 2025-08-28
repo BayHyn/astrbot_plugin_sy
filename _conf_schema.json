@@ -28,5 +28,26 @@
         "hint": "启用上下文功能时，最多使用用户最近的多少条对话作为上下文。建议设置为3-10之间的值。",
         "obvious_hint": false,
         "default": 5
+    },
+    "enable_reminder_at": {
+        "description": "启用提醒@功能",
+        "type": "bool",
+        "hint": "启用后，提醒执行时会在群聊中@提醒创建者。",
+        "obvious_hint": true,
+        "default": true
+    },
+    "enable_task_at": {
+        "description": "启用任务@功能",
+        "type": "bool",
+        "hint": "启用后，任务执行时会在群聊中@任务创建者。",
+        "obvious_hint": true,
+        "default": true
+    },
+    "enable_command_at": {
+        "description": "启用指令任务@功能",
+        "type": "bool",
+        "hint": "启用后，指令任务执行时会在群聊中@任务创建者。",
+        "obvious_hint": true,
+        "default": false
     }
 } 
