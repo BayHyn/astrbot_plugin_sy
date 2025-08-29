@@ -135,25 +135,23 @@ class CommandTrigger:
                 command_display = reminder.get("text", command)
                 custom_identifier = reminder.get("custom_identifier")
                 
-                identifier_text = ""
+                # 检查自定义标识的位置
+                position = custom_identifier.get("position", "start") if custom_identifier else "start"
+                
+                # 构建标识文本
                 if custom_identifier and custom_identifier.get("text"):
                     custom_text = custom_identifier["text"]
-                    position = custom_identifier.get("position", "start")
-                    
                     if position == "start":
                         identifier_text = f"[{custom_text}] {command_display}"
                     else:
-                        identifier_text = f"[指令任务] {command_display}\n[{custom_text}]"
+                        # end位置：使用自定义标识替换"指令任务"
+                        identifier_text = f"[{custom_text}] {command_display}"
                 else:
                     identifier_text = f"[指令任务] {command_display}"
                 
                 # 如果包含视频且是QQ平台，需要分开发送
                 if has_video and original_msg_origin.startswith("aiocqhttp"):
                     logger.info("检测到视频消息，QQ平台需要分开发送文字和视频")
-                    
-                    # 检查自定义标识的位置
-                    custom_identifier = reminder.get("custom_identifier")
-                    position = custom_identifier.get("position", "start") if custom_identifier else "start"
                     
                     # 先发送文字标识（如果是start位置）
                     if identifier_text and position == "start":
@@ -217,8 +215,8 @@ class CommandTrigger:
                         else:
                             forward_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
                     
-                    # 添加指令任务标识
-                    if identifier_text:
+                    # 如果是start位置，先添加标识再添加消息内容
+                    if position == "start" and identifier_text:
                         forward_msg.chain.append(Plain(identifier_text + "\n"))
                     
                     # 添加捕获到的消息内容
@@ -227,6 +225,28 @@ class CommandTrigger:
                     
                     # 发送转发消息
                     await self.context.send_message(original_msg_origin, forward_msg)
+                    
+                    # 如果是end位置，在消息发送后再发送标识
+                    if position == "end" and identifier_text:
+                        await asyncio.sleep(0.3)  # 短暂间隔
+                        end_text_msg = MessageChain()
+                        
+                        # 添加@消息（如果需要）
+                        should_at = self.config.get("enable_command_at", False)
+                        if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
+                            if original_msg_origin.startswith("aiocqhttp"):
+                                from astrbot.api.message_components import At
+                                end_text_msg.chain.append(At(qq=reminder["creator_id"]))
+                            elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
+                                if "creator_name" in reminder and reminder["creator_name"]:
+                                    end_text_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
+                                else:
+                                    end_text_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                            else:
+                                end_text_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        
+                        end_text_msg.chain.append(Plain(identifier_text))
+                        await self.context.send_message(original_msg_origin, end_text_msg)
                 
                 # 如果有多条消息，添加间隔
                 if len(captured_messages) > 1 and i < len(captured_messages) - 1:
