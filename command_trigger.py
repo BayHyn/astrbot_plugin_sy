@@ -141,13 +141,25 @@ class CommandTrigger:
                 # 构建标识文本
                 if custom_identifier and custom_identifier.get("text"):
                     custom_text = custom_identifier["text"]
-                    if position == "start":
-                        identifier_text = f"[{custom_text}] {command_display}"
+                    # 检查是否隐藏指令任务标识
+                    if self.config.get("hide_command_identifier", False):
+                        # 隐藏模式：只显示自定义文本
+                        identifier_text = custom_text
                     else:
-                        # end位置：使用自定义标识替换"指令任务"
-                        identifier_text = f"[{custom_text}] {command_display}"
+                        # 正常模式：显示完整格式
+                        if position == "start":
+                            identifier_text = f"[{custom_text}] {command_display}"
+                        else:
+                            # end位置：使用自定义标识替换"指令任务"
+                            identifier_text = f"[{custom_text}] {command_display}"
                 else:
-                    identifier_text = f"[指令任务] {command_display}"
+                    # 没有自定义标识时，检查是否隐藏
+                    if self.config.get("hide_command_identifier", False):
+                        # 隐藏模式：不显示任何标识
+                        identifier_text = ""
+                    else:
+                        # 正常模式：显示默认标识
+                        identifier_text = f"[指令任务] {command_display}"
                 
                 # 如果包含视频且是QQ平台，需要分开发送
                 if has_video and original_msg_origin.startswith("aiocqhttp"):

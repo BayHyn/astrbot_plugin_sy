@@ -49,5 +49,12 @@
         "hint": "启用后，指令任务执行时会在群聊中@任务创建者。",
         "obvious_hint": true,
         "default": false
+    },
+    "hide_command_identifier": {
+        "description": "隐藏指令任务标识",
+        "type": "bool",
+        "hint": "启用后，指令任务执行时只显示自定义文本，不显示方括号和指令详情。",
+        "obvious_hint": true,
+        "default": false
     }
 } 

@@ -23,6 +23,7 @@ class SmartReminder(Star):
         self.enable_reminder_at = self.config.get("enable_reminder_at", True)
         self.enable_task_at = self.config.get("enable_task_at", True)
         self.enable_command_at = self.config.get("enable_command_at", False)
+        self.hide_command_identifier = self.config.get("hide_command_identifier", False)
         
         # 数据文件路径处理 - 符合框架规范并保持向后兼容
         # 首先检查旧位置是否有数据，如果有则迁移到新位置
@@ -95,6 +96,7 @@ class SmartReminder(Star):
         logger.info(f"提醒@功能：{'启用' if self.enable_reminder_at else '禁用'}")
         logger.info(f"任务@功能：{'启用' if self.enable_task_at else '禁用'}")
         logger.info(f"指令任务@功能：{'启用' if self.enable_command_at else '禁用'}")
+        logger.info(f"隐藏指令任务标识：{'启用' if self.hide_command_identifier else '禁用'}")
 
     @filter.llm_tool(name="set_reminder")
     async def set_reminder(self, event, text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):
