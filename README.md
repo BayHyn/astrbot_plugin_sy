@@ -52,20 +52,20 @@
 插件提供以下命令用于管理提醒和任务：
 
 1. 添加提醒：
-/rmd add <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+/rmd add <内容> <时间> [开始星期] [重复类型] [节假日类型]
 例如：
 - `/rmd add 写周报 8:05 mon weekly`
 - `/rmd add 上班打卡 8:30 daily workday`（每个工作日）
 - `/rmd add 休息提醒 9:00 daily holiday`（每个法定节假日）
 
 2. 添加任务：
-/rmd task <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+/rmd task <内容> <时间> [开始星期] [重复类型] [节假日类型]
 例如：
 - `/rmd task 发送天气预报 8:00 daily`
 - `/rmd task 工作安排 9:00 mon weekly workday`（每周一工作日）
 
 3. 添加指令任务：
-/rmd command <指令> <时间> [开始星期] [重复类型] [--holiday_type=...]
+/rmd command <指令> <时间> [开始星期] [重复类型] [节假日类型]
 例如：
 - `/rmd command /weather 9:00 daily`（每天9点获取天气）
 - `/rmd command /news 18:00 mon weekly`（每周一18点获取新闻）
@@ -91,17 +91,17 @@
 **远程群聊命令列表：**
 
 1. 在指定群聊中添加提醒：
-/rmdg add <群聊ID> <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+/rmdg add <群聊ID> <内容> <时间> [开始星期] [重复类型] [节假日类型]
 例如：
 - `/rmdg add 1234567890 写周报 8:05 daily`
 
 2. 在指定群聊中添加任务：
-/rmdg task <群聊ID> <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+/rmdg task <群聊ID> <内容> <时间> [开始星期] [重复类型] [节假日类型]
 例如：
 - `/rmdg task 1234567890 发送天气预报 8:00 daily`
 
 3. 在指定群聊中添加指令任务：
-/rmdg command <群聊ID> <指令> <时间> [开始星期] [重复类型] [--holiday_type=...]
+/rmdg command <群聊ID> <指令> <时间> [开始星期] [重复类型] [节假日类型]
 例如：
 - `/rmdg command 1234567890 /weather 9:00 daily`
 - `/rmdg command 1234567890 /rmd--ls----before--每日提醒 8:00 daily`（自定义标识放在开头）
@@ -171,7 +171,7 @@
 
 ## 配置说明
 
-插件会在 `data/reminders/` 目录下自动创建 `reminder_data.json` 文件用于存储提醒和任务数据。
+插件会在 `/data/plugin_data/ai_reminder` 目录下自动创建 `reminder_data.json` 文件用于存储提醒和任务数据。
 
 ### 插件配置
 
@@ -184,7 +184,7 @@
 
 配置保存在 `data/config/ai_reminder_config.json` 文件中，也可通过管理面板配置。
 
-法定节假日数据会缓存在 `data/holiday_data/holiday_cache.json` 文件中，缓存期为30天，过期后会自动更新。
+法定节假日数据会缓存在 `/data/plugin_data/ai_reminder/holiday_cache.json` 文件中，缓存期为30天，过期后会自动更新。
 
 ## 提醒与任务的区别
 
@@ -242,12 +242,11 @@
 - AstrBot 框架 v3.4.15+（会话隔离功能需要此版本以上）
 - APScheduler
 - Python 3.7+
-- aiohttp（用于获取节假日数据）
 
 ## 作者
 
 - 作者：kjqwdw
-- 版本：v1.2.7
+- 版本：v1.2.8
 
 ## 更新日志
 
