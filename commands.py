@@ -156,15 +156,25 @@ class ReminderCommands:
             return
             
         # 获取要删除的提醒或任务
-        job_id = f"reminder_{msg_origin}_{index-1}"
+        # 由于任务ID包含时间戳，我们需要通过遍历所有任务来找到匹配的
+        removed = reminders[index - 1]
         
-        # 尝试删除调度任务
-        try:
-            self.scheduler_manager.remove_job(job_id)
-            logger.info(f"Successfully removed job: {job_id}")
-        except JobLookupError:
-            logger.error(f"Job not found: {job_id}")
+        # 尝试删除调度任务 - 通过遍历所有任务找到匹配的
+        job_found = False
+        for job in self.scheduler_manager.scheduler.get_jobs(): 
+            if job.id.startswith(f"reminder_{msg_origin}_{index-1}_"):
+                try:
+                    self.scheduler_manager.remove_job(job.id)
+                    logger.info(f"Successfully removed job: {job.id}")
+                    job_found = True
+                    break
+                except JobLookupError:
+                    logger.error(f"Job not found: {job.id}")
+        
+        if not job_found:
+            logger.warning(f"No job found for reminder_{msg_origin}_{index-1}")
             
+        # 从列表中移除任务
         removed = reminders.pop(index - 1)
         await save_reminder_data(self.data_file, self.reminder_data)
         
