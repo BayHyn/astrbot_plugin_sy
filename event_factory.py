@@ -5,6 +5,7 @@ from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.message.components import Plain
+from .utils import get_platform_type_from_origin
 
 
 class EventFactory:
@@ -12,6 +13,26 @@ class EventFactory:
     
     def __init__(self, context):
         self.context = context
+    
+    def _get_platform_instance(self, platform_type: str):
+        """获取平台实例的兼容性方法"""
+        try:
+            # 首先尝试使用 get_platform (v3兼容)
+            if hasattr(self.context, 'get_platform'):
+                return self.context.get_platform(platform_type)
+        except Exception as e:
+            logger.warning(f"使用get_platform获取平台实例失败: {e}")
+        
+        # 如果上面失败，尝试通过平台管理器遍历查找
+        try:
+            if hasattr(self.context, 'platform_manager') and hasattr(self.context.platform_manager, 'platform_insts'):
+                for platform_inst in self.context.platform_manager.platform_insts:
+                    if hasattr(platform_inst, 'meta') and platform_inst.meta().name == platform_type:
+                        return platform_inst
+        except Exception as e:
+            logger.warning(f"通过platform_manager获取平台实例失败: {e}")
+        
+        return None
     
     def create_event(self, unified_msg_origin: str, command: str, creator_id: str, creator_name: str = None) -> AstrMessageEvent:
         """创建事件对象，根据平台类型自动选择正确的事件类"""
@@ -24,7 +45,8 @@ class EventFactory:
         if ":" in unified_msg_origin:
             parts = unified_msg_origin.split(":")
             if len(parts) >= 3:
-                platform_name = parts[0]
+                # 使用兼容性工具提取平台类型，而不是直接使用第一部分
+                platform_name = get_platform_type_from_origin(unified_msg_origin)
                 msg_type_str = parts[1]
                 session_id = ":".join(parts[2:])  # 可能包含多个冒号
                 
@@ -108,7 +130,7 @@ class EventFactory:
     def _create_aiocqhttp_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 aiocqhttp 平台事件"""
         try:
-            platform = self.context.get_platform("aiocqhttp")
+            platform = self._get_platform_instance("aiocqhttp")
             if platform and hasattr(platform, 'bot'):
                 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
                 event = AiocqhttpMessageEvent(
@@ -129,7 +151,7 @@ class EventFactory:
     def _create_qq_official_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 QQ 官方平台事件"""
         try:
-            platform = self.context.get_platform("qq_official")
+            platform = self._get_platform_instance("qq_official")
             if platform and hasattr(platform, 'client'):
                 from astrbot.core.platform.sources.qqofficial.qqofficial_message_event import QQOfficialMessageEvent
                 event = QQOfficialMessageEvent(
@@ -149,7 +171,7 @@ class EventFactory:
     def _create_telegram_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 Telegram 平台事件"""
         try:
-            platform = self.context.get_platform("telegram")
+            platform = self._get_platform_instance("telegram")
             if platform and hasattr(platform, 'client'):
                 from astrbot.core.platform.sources.telegram.tg_event import TelegramPlatformEvent
                 event = TelegramPlatformEvent(
@@ -169,7 +191,7 @@ class EventFactory:
     def _create_discord_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 Discord 平台事件"""
         try:
-            platform = self.context.get_platform("discord")
+            platform = self._get_platform_instance("discord")
             if platform and hasattr(platform, 'client'):
                 from astrbot.core.platform.sources.discord.discord_platform_event import DiscordPlatformEvent
                 event = DiscordPlatformEvent(
@@ -189,7 +211,7 @@ class EventFactory:
     def _create_slack_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 Slack 平台事件"""
         try:
-            platform = self.context.get_platform("slack")
+            platform = self._get_platform_instance("slack")
             if platform and hasattr(platform, 'web_client'):
                 from astrbot.core.platform.sources.slack.slack_event import SlackMessageEvent
                 event = SlackMessageEvent(
@@ -209,7 +231,7 @@ class EventFactory:
     def _create_lark_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 Lark 平台事件"""
         try:
-            platform = self.context.get_platform("lark")
+            platform = self._get_platform_instance("lark")
             if platform and hasattr(platform, 'bot'):
                 from astrbot.core.platform.sources.lark.lark_event import LarkMessageEvent
                 event = LarkMessageEvent(
@@ -229,7 +251,7 @@ class EventFactory:
     def _create_wechatpadpro_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 WeChatPadPro 平台事件"""
         try:
-            platform = self.context.get_platform("wechatpadpro")
+            platform = self._get_platform_instance("wechatpadpro")
             if platform:
                 from astrbot.core.platform.sources.wechatpadpro.wechatpadpro_message_event import WeChatPadProMessageEvent
                 event = WeChatPadProMessageEvent(
@@ -266,7 +288,7 @@ class EventFactory:
     def _create_dingtalk_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建钉钉平台事件"""
         try:
-            platform = self.context.get_platform("dingtalk")
+            platform = self._get_platform_instance("dingtalk")
             if platform and hasattr(platform, 'client'):
                 from astrbot.core.platform.sources.dingtalk.dingtalk_event import DingtalkMessageEvent
                 event = DingtalkMessageEvent(

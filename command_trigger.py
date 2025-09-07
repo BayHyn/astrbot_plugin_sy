@@ -4,6 +4,7 @@ from astrbot.api.message_components import Plain, Video
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from astrbot.core.message.message_event_result import MessageChain
 from .event_factory import EventFactory
+from .utils import get_platform_type_from_origin
 
 
 class CommandTrigger:
@@ -17,7 +18,21 @@ class CommandTrigger:
         self.original_send_method = None  # 保存原始的send方法
         self.target_event = None  # 目标事件对象
         self.event_factory = EventFactory(context)  # 事件工厂
-        
+    
+    def _add_at_message(self, msg_chain, original_msg_origin, reminder):
+        """添加@消息的helper函数"""
+        platform_type = get_platform_type_from_origin(original_msg_origin)
+        if platform_type == "aiocqhttp":
+            from astrbot.api.message_components import At
+            msg_chain.chain.append(At(qq=reminder["creator_id"]))
+        elif platform_type in self.wechat_platforms:
+            if "creator_name" in reminder and reminder["creator_name"]:
+                msg_chain.chain.append(Plain(f"@{reminder['creator_name']} "))
+            else:
+                msg_chain.chain.append(Plain(f"@{reminder['creator_id']} "))
+        else:
+            msg_chain.chain.append(Plain(f"@{reminder['creator_id']} "))
+    
     def setup_message_interceptor(self, target_event):
         """设置消息拦截器来捕获指令的响应"""
         self.target_event = target_event
@@ -162,7 +177,8 @@ class CommandTrigger:
                         identifier_text = f"[指令任务] {command_display}"
                 
                 # 如果包含视频且是QQ平台，需要分开发送
-                if has_video and original_msg_origin.startswith("aiocqhttp"):
+                platform_type = get_platform_type_from_origin(original_msg_origin)
+                if has_video and platform_type == "aiocqhttp":
                     logger.info("检测到视频消息，QQ平台需要分开发送文字和视频")
                     
                     # 先发送文字标识（如果是start位置）
@@ -172,8 +188,7 @@ class CommandTrigger:
                         # 添加@消息（如果需要）
                         should_at = self.config.get("enable_command_at", False)
                         if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                            from astrbot.api.message_components import At
-                            text_msg.chain.append(At(qq=reminder["creator_id"]))
+                            self._add_at_message(text_msg, original_msg_origin, reminder)
                         
                         text_msg.chain.append(Plain(identifier_text))
                         await self.context.send_message(original_msg_origin, text_msg)
@@ -185,8 +200,7 @@ class CommandTrigger:
                     # 添加@消息（如果需要）
                     should_at = self.config.get("enable_command_at", False)
                     if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        from astrbot.api.message_components import At
-                        video_msg.chain.append(At(qq=reminder["creator_id"]))
+                        self._add_at_message(video_msg, original_msg_origin, reminder)
                     
                     # 只添加视频组件
                     for component in captured_msg.chain:
@@ -203,8 +217,7 @@ class CommandTrigger:
                         # 添加@消息（如果需要）
                         should_at = self.config.get("enable_command_at", False)
                         if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                            from astrbot.api.message_components import At
-                            end_text_msg.chain.append(At(qq=reminder["creator_id"]))
+                            self._add_at_message(end_text_msg, original_msg_origin, reminder)
                         
                         end_text_msg.chain.append(Plain(identifier_text))
                         await self.context.send_message(original_msg_origin, end_text_msg)
@@ -216,16 +229,7 @@ class CommandTrigger:
                     # 添加@消息（如果需要）
                     should_at = self.config.get("enable_command_at", False)
                     if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        if original_msg_origin.startswith("aiocqhttp"):
-                            from astrbot.api.message_components import At
-                            forward_msg.chain.append(At(qq=reminder["creator_id"]))
-                        elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                            if "creator_name" in reminder and reminder["creator_name"]:
-                                forward_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                            else:
-                                forward_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                        else:
-                            forward_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        self._add_at_message(forward_msg, original_msg_origin, reminder)
                     
                     # 如果是start位置，先添加标识再添加消息内容
                     if position == "start" and identifier_text:
@@ -246,16 +250,7 @@ class CommandTrigger:
                         # 添加@消息（如果需要）
                         should_at = self.config.get("enable_command_at", False)
                         if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                            if original_msg_origin.startswith("aiocqhttp"):
-                                from astrbot.api.message_components import At
-                                end_text_msg.chain.append(At(qq=reminder["creator_id"]))
-                            elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                                if "creator_name" in reminder and reminder["creator_name"]:
-                                    end_text_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                                else:
-                                    end_text_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                            else:
-                                end_text_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                            self._add_at_message(end_text_msg, original_msg_origin, reminder)
                         
                         end_text_msg.chain.append(Plain(identifier_text))
                         await self.context.send_message(original_msg_origin, end_text_msg)
@@ -276,16 +271,7 @@ class CommandTrigger:
             # 添加@消息（如果需要）
             should_at = self.config.get("enable_command_at", False)
             if should_at and not message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                if original_msg_origin.startswith("aiocqhttp"):
-                    from astrbot.api.message_components import At
-                    error_msg.chain.append(At(qq=reminder["creator_id"]))
-                elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                    if "creator_name" in reminder and reminder["creator_name"]:
-                        error_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                    else:
-                        error_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                else:
-                    error_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                self._add_at_message(error_msg, original_msg_origin, reminder)
             
             command_display = reminder.get("text", command)
             

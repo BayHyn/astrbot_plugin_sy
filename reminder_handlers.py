@@ -6,6 +6,7 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import At, Plain
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata, MessageType, MessageMember
 from astrbot.core.platform.astr_message_event import AstrMessageEvent, MessageSesion
+from .utils import get_platform_type_from_origin
 
 
 class ReminderMessageHandler:
@@ -15,6 +16,19 @@ class ReminderMessageHandler:
         self.context = context
         self.wechat_platforms = wechat_platforms
         self.config = config or {}
+    
+    def _add_at_message(self, msg_chain, original_msg_origin, reminder):
+        """添加@消息的helper函数"""
+        platform_type = get_platform_type_from_origin(original_msg_origin)
+        if platform_type == "aiocqhttp":
+            msg_chain.chain.append(At(qq=reminder["creator_id"]))
+        elif platform_type in self.wechat_platforms:
+            if "creator_name" in reminder and reminder["creator_name"]:
+                msg_chain.chain.append(Plain(f"@{reminder['creator_name']} "))
+            else:
+                msg_chain.chain.append(Plain(f"@{reminder['creator_id']} "))
+        else:
+            msg_chain.chain.append(Plain(f"@{reminder['creator_id']} "))
     
     def is_private_chat(self, unified_msg_origin: str) -> bool:
         """判断是否为私聊"""
@@ -27,7 +41,8 @@ class ReminderMessageHandler:
     def get_original_session_id(self, session_id: str) -> str:
         """从隔离格式的会话ID中提取原始会话ID，用于消息发送"""
         # 检查是否是微信平台
-        is_wechat_platform = any(session_id.startswith(platform) for platform in self.wechat_platforms)
+        platform_type = get_platform_type_from_origin(session_id)
+        is_wechat_platform = platform_type in self.wechat_platforms
         
         # 处理微信群聊的特殊情况
         if "@chatroom" in session_id:
@@ -99,9 +114,10 @@ class ReminderMessageHandler:
             should_at = self.config.get("enable_reminder_at", True)
         
         if should_at and not self.is_private_chat(original_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-            if original_msg_origin.startswith("aiocqhttp"):
+            platform_type = get_platform_type_from_origin(original_msg_origin)
+            if platform_type == "aiocqhttp":
                 msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
-            elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
+            elif platform_type in self.wechat_platforms:
                 # 所有微信平台 - 使用用户名/昵称而不是ID
                 if "creator_name" in reminder and reminder["creator_name"]:
                     msg.chain.append(Plain(f"@{reminder['creator_name']} "))
@@ -327,17 +343,8 @@ class TaskExecutor:
         else:
             msg.group_id = None
             
-        # 不再尝试分割session_id，而是直接使用消息来源标识平台
-        platform_name = "unknown"
-        if any(unified_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-            # 如果是微信相关平台，使用前缀作为平台名称
-            for platform in self.wechat_platforms:
-                if unified_msg_origin.startswith(platform):
-                    platform_name = platform
-                    break
-        elif ":" in unified_msg_origin:
-            # 如果有冒号，尝试获取第一段作为平台名
-            platform_name = unified_msg_origin.split(":", 1)[0]
+        # 使用兼容性工具来提取平台类型
+        platform_name = get_platform_type_from_origin(unified_msg_origin)
 
         # 创建事件对象 - 重要：session_id只需要ID部分，不要包含平台前缀
         raw_session_id = send_session_id
@@ -631,9 +638,10 @@ class TaskExecutor:
             is_private_chat = self.message_handler.is_private_chat(unified_msg_origin)
             original_msg_origin = self._get_send_session_id(unified_msg_origin, is_private_chat)
             if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                if original_msg_origin.startswith("aiocqhttp"):
+                platform_type = get_platform_type_from_origin(original_msg_origin)
+                if platform_type == "aiocqhttp":
                     final_msg.chain.append(At(qq=reminder["creator_id"]))
-                elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
+                elif platform_type in self.wechat_platforms:
                     if "creator_name" in reminder and reminder["creator_name"]:
                         final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
                     else:
@@ -665,15 +673,7 @@ class TaskExecutor:
                     # 重置消息链（保留@部分）
                     final_msg = MessageChain()
                     if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        if original_msg_origin.startswith("aiocqhttp"):
-                            final_msg.chain.append(At(qq=reminder["creator_id"]))
-                        elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                            if "creator_name" in reminder and reminder["creator_name"]:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                            else:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                        else:
-                            final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        self.message_handler._add_at_message(final_msg, original_msg_origin, reminder)
                 
                 elif isinstance(component, File):
                     # 先发送累积的文本（如果有）
@@ -693,15 +693,7 @@ class TaskExecutor:
                     # 重置消息链
                     final_msg = MessageChain()
                     if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        if original_msg_origin.startswith("aiocqhttp"):
-                            final_msg.chain.append(At(qq=reminder["creator_id"]))
-                        elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                            if "creator_name" in reminder and reminder["creator_name"]:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                            else:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                        else:
-                            final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        self.message_handler._add_at_message(final_msg, original_msg_origin, reminder)
                 
                 elif isinstance(component, Video):
                     # 先发送累积的文本（如果有）
@@ -721,15 +713,7 @@ class TaskExecutor:
                     # 重置消息链
                     final_msg = MessageChain()
                     if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        if original_msg_origin.startswith("aiocqhttp"):
-                            final_msg.chain.append(At(qq=reminder["creator_id"]))
-                        elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                            if "creator_name" in reminder and reminder["creator_name"]:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                            else:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                        else:
-                            final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        self.message_handler._add_at_message(final_msg, original_msg_origin, reminder)
                 
                 elif isinstance(component, Record):
                     # 先发送累积的文本（如果有）
@@ -749,15 +733,7 @@ class TaskExecutor:
                     # 重置消息链
                     final_msg = MessageChain()
                     if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        if original_msg_origin.startswith("aiocqhttp"):
-                            final_msg.chain.append(At(qq=reminder["creator_id"]))
-                        elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                            if "creator_name" in reminder and reminder["creator_name"]:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                            else:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                        else:
-                            final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        self.message_handler._add_at_message(final_msg, original_msg_origin, reminder)
                 
                 elif isinstance(component, Share):
                     # 先发送累积的文本（如果有）
@@ -777,15 +753,7 @@ class TaskExecutor:
                     # 重置消息链
                     final_msg = MessageChain()
                     if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                        if original_msg_origin.startswith("aiocqhttp"):
-                            final_msg.chain.append(At(qq=reminder["creator_id"]))
-                        elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                            if "creator_name" in reminder and reminder["creator_name"]:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                            else:
-                                final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-                        else:
-                            final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+                        self.message_handler._add_at_message(final_msg, original_msg_origin, reminder)
                 
                 else:
                     # 对于其他类型的组件，尝试直接添加
@@ -837,15 +805,7 @@ class TaskExecutor:
             return send_session_id
         else:
             # 如果不是正确格式，尝试构造
-            platform_name = "unknown"
-            if any(unified_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                for platform in self.wechat_platforms:
-                    if unified_msg_origin.startswith(platform):
-                        platform_name = platform
-                        break
-            elif ":" in unified_msg_origin:
-                platform_name = unified_msg_origin.split(":", 1)[0]
-            
+            platform_name = get_platform_type_from_origin(unified_msg_origin)
             msg_type = "FriendMessage" if is_private_chat else "GroupMessage"
             return f"{platform_name}:{msg_type}:{send_session_id}"
     
@@ -906,18 +866,7 @@ class TaskExecutor:
         
         # 添加@，复用提醒模式中的@逻辑
         if should_at and not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-            if original_msg_origin.startswith("aiocqhttp"):
-                final_msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
-            elif any(original_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                # 所有微信平台 - 使用用户名/昵称而不是ID
-                if "creator_name" in reminder and reminder["creator_name"]:
-                    final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                else:
-                    # 如果没有保存用户名，尝试使用ID
-                    final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-            else:
-                # 其他平台的@实现
-                final_msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+            self.message_handler._add_at_message(final_msg, original_msg_origin, reminder)
         
         # 添加结果消息内容
         for item in result_msg.chain:
@@ -1080,18 +1029,9 @@ class SimpleMessageSender:
         
         # 如果不是私聊且存在创建者ID，则添加@（明确使用私聊判断）
         if should_at and not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-            if unified_msg_origin.startswith("aiocqhttp"):
-                msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
-            elif any(unified_msg_origin.startswith(platform) for platform in self.wechat_platforms):
-                # 所有微信平台 - 使用用户名/昵称而不是ID
-                if "creator_name" in reminder and reminder["creator_name"]:
-                    msg.chain.append(Plain(f"@{reminder['creator_name']} "))
-                else:
-                    # 如果没有保存用户名，尝试使用ID
-                    msg.chain.append(Plain(f"@{reminder['creator_id']} "))
-            else:
-                # 其他平台的@实现
-                msg.chain.append(Plain(f"@{reminder['creator_id']} "))
+            # 获取原始消息ID用于平台检测
+            original_msg_origin = self.message_handler.get_original_session_id(unified_msg_origin)
+            self.message_handler._add_at_message(msg, original_msg_origin, reminder)
         
         prefix = "指令任务: " if is_command_task else "任务: " if is_task else "提醒: "
         msg.chain.append(Plain(f"{prefix}{reminder['text']}"))

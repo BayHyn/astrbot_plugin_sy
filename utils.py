@@ -278,3 +278,196 @@ class HolidayManager:
             return False
             
         return True 
+
+# v3/v4兼容性处理功能
+def normalize_unified_msg_origin(unified_msg_origin):
+    """标准化unified_msg_origin格式，处理v3/v4兼容性
+    
+    Args:
+        unified_msg_origin: 原始的统一消息来源字符串
+        
+    Returns:
+        str: 标准化后的统一消息来源字符串
+    """
+    if not unified_msg_origin or ":" not in unified_msg_origin:
+        return unified_msg_origin
+    
+    parts = unified_msg_origin.split(":", 2)
+    if len(parts) < 3:
+        return unified_msg_origin
+    
+    platform_part, message_type, session_id = parts
+    
+    # 检测v3格式的平台名称（不包含下划线的常见平台名）
+    v3_platform_names = [
+        "aiocqhttp", "qq_official", "discord", "slack", "telegram", 
+        "wechatmp", "wechatferry", "wecom", "weixin_official_account",
+        "satori", "webchat"
+    ]
+    
+    # 如果是v3格式的平台名称，保持不变
+    if platform_part in v3_platform_names:
+        return unified_msg_origin
+    
+    # 如果是v4格式（可能包含实例ID），尝试提取平台类型
+    for platform_name in v3_platform_names:
+        if platform_part.startswith(platform_name):
+            # 这可能是v4格式，为了向后兼容，我们保持原格式
+            # 但要确保数据能被正确处理
+            return unified_msg_origin
+    
+    return unified_msg_origin
+
+def get_platform_type_from_origin(unified_msg_origin):
+    """从unified_msg_origin中提取平台类型
+    
+    Args:
+        unified_msg_origin: 统一消息来源字符串
+        
+    Returns:
+        str: 平台类型名称 (如 aiocqhttp, discord 等)
+    """
+    if not unified_msg_origin or ":" not in unified_msg_origin:
+        return "unknown"
+    
+    platform_part = unified_msg_origin.split(":", 1)[0]
+    
+    # v3格式的平台名称
+    v3_platform_names = [
+        "aiocqhttp", "qq_official", "discord", "slack", "telegram", 
+        "wechatmp", "wechatferry", "wecom", "weixin_official_account",
+        "satori", "webchat"
+    ]
+    
+    # 直接匹配v3平台名称
+    if platform_part in v3_platform_names:
+        return platform_part
+    
+    # 尝试从v4格式中提取平台类型
+    for platform_name in v3_platform_names:
+        if platform_part.startswith(platform_name):
+            return platform_name
+    
+    return platform_part
+
+def is_compatible_platform_origin(origin1, origin2):
+    """检查两个unified_msg_origin是否指向同一个实际会话
+    
+    这个函数用于处理v3/v4兼容性，判断两个不同格式的origin是否实际指向同一个会话
+    
+    Args:
+        origin1: 第一个统一消息来源字符串
+        origin2: 第二个统一消息来源字符串
+        
+    Returns:
+        bool: 如果指向同一个会话返回True
+    """
+    if origin1 == origin2:
+        return True
+    
+    # 解析两个origin
+    parts1 = origin1.split(":", 2) if origin1 and ":" in origin1 else []
+    parts2 = origin2.split(":", 2) if origin2 and ":" in origin2 else []
+    
+    if len(parts1) < 3 or len(parts2) < 3:
+        return False
+    
+    platform1, msg_type1, session1 = parts1
+    platform2, msg_type2, session2 = parts2
+    
+    # 消息类型和会话ID必须相同
+    if msg_type1 != msg_type2 or session1 != session2:
+        return False
+    
+    # 检查平台类型是否兼容
+    platform_type1 = get_platform_type_from_origin(origin1)
+    platform_type2 = get_platform_type_from_origin(origin2)
+    
+    return platform_type1 == platform_type2
+
+def find_compatible_reminder_key(reminder_data, target_origin):
+    """在提醒数据中查找与目标origin兼容的key
+    
+    Args:
+        reminder_data: 提醒数据字典
+        target_origin: 目标统一消息来源字符串
+        
+    Returns:
+        str or None: 找到的兼容key，如果没找到返回None
+    """
+    # 首先尝试直接匹配
+    if target_origin in reminder_data:
+        return target_origin
+    
+    # 然后尝试兼容性匹配
+    for existing_key in reminder_data.keys():
+        if is_compatible_platform_origin(existing_key, target_origin):
+            logger.info(f"找到兼容的提醒数据key: {existing_key} <-> {target_origin}")
+            return existing_key
+    
+    return None
+
+# 兼容性处理类
+class CompatibilityHandler:
+    """处理v3/v4兼容性的工具类"""
+    
+    def __init__(self, reminder_data):
+        self.reminder_data = reminder_data
+    
+    def get_reminders(self, unified_msg_origin):
+        """获取指定origin的提醒列表，支持兼容性查找"""
+        # 首先尝试直接获取
+        if unified_msg_origin in self.reminder_data:
+            return self.reminder_data[unified_msg_origin]
+        
+        # 尝试兼容性查找
+        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+        if compatible_key:
+            return self.reminder_data[compatible_key]
+        
+        return []
+    
+    def ensure_key_exists(self, unified_msg_origin):
+        """确保指定的key存在，如果不存在则创建或使用兼容的key
+        
+        Returns:
+            str: 实际使用的key
+        """
+        # 检查是否有兼容的key存在
+        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+        
+        if compatible_key:
+            # 使用现有的兼容key
+            target_key = compatible_key
+        else:
+            # 使用新的key
+            target_key = unified_msg_origin
+        
+        if target_key not in self.reminder_data:
+            self.reminder_data[target_key] = []
+        
+        return target_key
+    
+    def add_reminder(self, unified_msg_origin, reminder_item):
+        """添加提醒，使用兼容性处理"""
+        target_key = self.ensure_key_exists(unified_msg_origin)
+        self.reminder_data[target_key].append(reminder_item)
+        return target_key
+    
+    def remove_reminder(self, unified_msg_origin, index):
+        """删除提醒，使用兼容性处理"""
+        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+        
+        if not compatible_key:
+            return None, "没有找到对应的提醒数据"
+        
+        reminders = self.reminder_data[compatible_key]
+        if index < 0 or index >= len(reminders):
+            return None, "序号无效"
+        
+        removed_item = reminders.pop(index)
+        return removed_item, compatible_key
+    
+    def get_actual_key(self, unified_msg_origin):
+        """获取实际使用的key"""
+        return find_compatible_reminder_key(self.reminder_data, unified_msg_origin) or unified_msg_origin 

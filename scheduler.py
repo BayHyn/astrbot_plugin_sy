@@ -5,7 +5,7 @@ from apscheduler.schedulers.base import JobLookupError
 from astrbot.api import logger
 from astrbot.api.event import MessageChain
 from astrbot.api.message_components import At, Plain
-from .utils import is_outdated, save_reminder_data, HolidayManager
+from .utils import is_outdated, save_reminder_data, HolidayManager, find_compatible_reminder_key
 from .reminder_handlers import ReminderMessageHandler, TaskExecutor, ReminderExecutor, SimpleMessageSender
 
 # 使用全局注册表来保存调度器实例
@@ -346,11 +346,13 @@ class ReminderScheduler:
         
         # 如果是一次性任务（非重复任务），执行后从数据中删除
         if reminder.get("repeat", "none") == "none":
-            if unified_msg_origin in self.reminder_data:
+            # 使用兼容性查找来找到正确的数据key
+            compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+            if compatible_key:
                 # 查找并删除这个提醒
-                for i, r in enumerate(self.reminder_data[unified_msg_origin]):
+                for i, r in enumerate(self.reminder_data[compatible_key]):
                     if r == reminder:  # 比较整个字典
-                        self.reminder_data[unified_msg_origin].pop(i)
+                        self.reminder_data[compatible_key].pop(i)
                         logger.info(f"One-time {'task' if is_task else 'reminder'} removed: {reminder['text']}")
                         await save_reminder_data(self.data_file, self.reminder_data)
                         break

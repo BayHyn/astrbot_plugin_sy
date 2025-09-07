@@ -5,7 +5,7 @@ from astrbot.api.event.filter import command, command_group
 from astrbot.api import logger, AstrBotConfig
 import os
 from pathlib import Path
-from .utils import load_reminder_data
+from .utils import load_reminder_data, CompatibilityHandler
 from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
@@ -80,6 +80,9 @@ class SmartReminder(Star):
         # 初始化数据存储
         self.reminder_data = load_reminder_data(self.data_file)
         
+        # 初始化兼容性处理器
+        self.compatibility_handler = CompatibilityHandler(self.reminder_data)
+        
         # 初始化调度器
         self.scheduler_manager = ReminderScheduler(context, self.reminder_data, self.data_file, self.unique_session, self.config)
         
@@ -97,6 +100,7 @@ class SmartReminder(Star):
         logger.info(f"任务@功能：{'启用' if self.enable_task_at else '禁用'}")
         logger.info(f"指令任务@功能：{'启用' if self.enable_command_at else '禁用'}")
         logger.info(f"隐藏指令任务标识：{'启用' if self.hide_command_identifier else '禁用'}")
+        logger.info(f"v3/v4兼容性处理：已启用")
 
     @filter.llm_tool(name="set_reminder")
     async def set_reminder(self, event, text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):

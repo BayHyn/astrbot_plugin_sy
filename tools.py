@@ -65,8 +65,8 @@ class ReminderTools:
                 # 使用会话隔离功能获取会话ID
                 msg_origin = self.get_session_id(raw_msg_origin, creator_id)
             
-            if msg_origin not in self.reminder_data:
-                self.reminder_data[msg_origin] = []
+            # 使用兼容性处理器确保key存在
+            actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
             
             # 处理重复类型和节假日类型的组合
             final_repeat = repeat or "none"
@@ -83,13 +83,13 @@ class ReminderTools:
                 "is_task": False  # 标记为提醒，不是任务
             }
             
-            self.reminder_data[msg_origin].append(reminder)
+            self.reminder_data[actual_key].append(reminder)
             
             # 解析时间
             dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
             
             # 设置定时任务
-            self.scheduler_manager.add_job(msg_origin, reminder, dt)
+            self.scheduler_manager.add_job(actual_key, reminder, dt)
             
             await save_reminder_data(self.data_file, self.reminder_data)
             
@@ -148,8 +148,8 @@ class ReminderTools:
                 # 使用会话隔离功能获取会话ID
                 msg_origin = self.get_session_id(raw_msg_origin, creator_id)
             
-            if msg_origin not in self.reminder_data:
-                self.reminder_data[msg_origin] = []
+            # 使用兼容性处理器确保key存在
+            actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
             
             # 处理重复类型和节假日类型的组合
             final_repeat = repeat or "none"
@@ -166,13 +166,13 @@ class ReminderTools:
                 "is_task": True  # 标记为任务，不是提醒
             }
             
-            self.reminder_data[msg_origin].append(task)
+            self.reminder_data[actual_key].append(task)
             
             # 解析时间
             dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
             
             # 设置定时任务
-            self.scheduler_manager.add_job(msg_origin, task, dt)
+            self.scheduler_manager.add_job(actual_key, task, dt)
             
             await save_reminder_data(self.data_file, self.reminder_data)
             
@@ -246,7 +246,9 @@ class ReminderTools:
             for job in self.scheduler_manager.scheduler.get_jobs():
                 logger.info(f"Job ID: {job.id}, Next run: {job.next_run_time}, Args: {job.args}")
             
-            reminders = self.reminder_data.get(msg_origin, [])
+            # 使用兼容性处理器获取提醒列表
+            reminders = self.star.compatibility_handler.get_reminders(msg_origin)
+            actual_key = self.star.compatibility_handler.get_actual_key(msg_origin)
             if not reminders:
                 return "当前没有任何提醒或任务。"
             
@@ -348,7 +350,7 @@ class ReminderTools:
                 logger.info(f"Attempting to delete {'task' if reminder.get('is_task', False) else 'reminder'}: {reminder}")
                 
                 # 尝试删除调度任务
-                job_id = f"reminder_{msg_origin}_{i}"
+                job_id = f"reminder_{actual_key}_{i}"
                 try:
                     self.scheduler_manager.remove_job(job_id)
                     logger.info(f"Successfully removed job: {job_id}")
@@ -371,7 +373,7 @@ class ReminderTools:
                 reminders.pop(i)
             
             # 更新数据
-            self.reminder_data[msg_origin] = reminders
+            self.reminder_data[actual_key] = reminders
             await save_reminder_data(self.data_file, self.reminder_data)
             
             # 调试信息：打印剩余的调度任务
