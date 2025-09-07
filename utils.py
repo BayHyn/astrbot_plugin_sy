@@ -384,7 +384,6 @@ def get_platform_type_from_system(platform_id, context=None):
     if not context:
         # 如果没有context，尝试从全局获取
         try:
-            # 这里可能需要根据实际情况调整如何获取context
             from astrbot.core.star import star_map
             if star_map:
                 # 取第一个可用的context
