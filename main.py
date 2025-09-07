@@ -80,8 +80,8 @@ class SmartReminder(Star):
         # 初始化数据存储
         self.reminder_data = load_reminder_data(self.data_file)
         
-        # 初始化兼容性处理器
-        self.compatibility_handler = CompatibilityHandler(self.reminder_data)
+        # 初始化兼容性处理器（传入context）
+        self.compatibility_handler = CompatibilityHandler(self.reminder_data, context)
         
         # 初始化调度器
         self.scheduler_manager = ReminderScheduler(context, self.reminder_data, self.data_file, self.unique_session, self.config)

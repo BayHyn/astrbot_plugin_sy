@@ -321,6 +321,9 @@ def normalize_unified_msg_origin(unified_msg_origin):
 def get_platform_type_from_origin(unified_msg_origin):
     """从unified_msg_origin中提取平台类型
     
+    注意：这个函数只用于判断平台类型，不应该用于构建新的origin
+    对于v4格式（如 aiocqhttp-123），会返回基础平台类型（aiocqhttp）
+    
     Args:
         unified_msg_origin: 统一消息来源字符串
         
@@ -349,6 +352,56 @@ def get_platform_type_from_origin(unified_msg_origin):
             return platform_name
     
     return platform_part
+
+def get_platform_id_from_origin(unified_msg_origin):
+    """从unified_msg_origin中提取平台ID（原始的第一部分）
+    
+    这个函数用于获取原始的platform_id，无论是v3还是v4格式
+    
+    Args:
+        unified_msg_origin: 统一消息来源字符串
+        
+    Returns:
+        str: 平台ID (如 aiocqhttp, aiocqhttp-123, 本地 等)
+    """
+    if not unified_msg_origin or ":" not in unified_msg_origin:
+        return "unknown"
+    
+    return unified_msg_origin.split(":", 1)[0]
+
+def get_platform_type_from_system(platform_id, context=None):
+    """从系统中获取platform_id对应的真实平台类型
+    
+    这个函数通过查询系统中注册的平台实例来获取真实的平台类型
+    
+    Args:
+        platform_id: 平台ID
+        context: AstrBot的Context对象（如果有的话）
+        
+    Returns:
+        str: 真实的平台类型，如果找不到则返回platform_id本身
+    """
+    if not context:
+        # 如果没有context，尝试从全局获取
+        try:
+            # 这里可能需要根据实际情况调整如何获取context
+            from astrbot.core.star import star_map
+            if star_map:
+                # 取第一个可用的context
+                context = next(iter(star_map.values()), None)
+        except:
+            pass
+    
+    if context and hasattr(context, 'get_platform_inst'):
+        try:
+            platform_inst = context.get_platform_inst(platform_id)
+            if platform_inst:
+                return platform_inst.meta().name
+        except Exception as e:
+            logger.warning(f"从系统获取平台类型失败: {e}")
+    
+    # 如果无法从系统获取，回退到基于字符串的判断
+    return get_platform_type_from_origin(f"{platform_id}:dummy:dummy")
 
 def is_compatible_platform_origin(origin1, origin2):
     """检查两个unified_msg_origin是否指向同一个实际会话
@@ -379,18 +432,49 @@ def is_compatible_platform_origin(origin1, origin2):
     if msg_type1 != msg_type2 or session1 != session2:
         return False
     
-    # 检查平台类型是否兼容
-    platform_type1 = get_platform_type_from_origin(origin1)
-    platform_type2 = get_platform_type_from_origin(origin2)
+    # 检查平台是否兼容（支持双向匹配）
+    platform_id1 = get_platform_id_from_origin(origin1)
+    platform_id2 = get_platform_id_from_origin(origin2)
     
-    return platform_type1 == platform_type2
+    # 如果platform_id完全相同，直接匹配
+    if platform_id1 == platform_id2:
+        return True
+    
+    # 获取平台类型进行兼容性匹配（优先使用系统查询）
+    platform_type1 = get_platform_type_from_system(platform_id1, None)
+    platform_type2 = get_platform_type_from_system(platform_id2, None)
+    
+    # 如果系统查询失败，回退到字符串分析
+    if platform_type1 == platform_id1:
+        platform_type1 = get_platform_type_from_origin(origin1)
+    if platform_type2 == platform_id2:
+        platform_type2 = get_platform_type_from_origin(origin2)
+    
+    # 平台类型必须相同才能兼容
+    if platform_type1 != platform_type2:
+        return False
+    
+    # v3格式的平台名称列表
+    v3_platform_names = [
+        "aiocqhttp", "qq_official", "discord", "slack", "telegram", 
+        "wechatmp", "wechatferry", "wecom", "weixin_official_account",
+        "satori", "webchat"
+    ]
+    
+    # 如果都是v3格式，必须完全匹配
+    if platform_id1 in v3_platform_names and platform_id2 in v3_platform_names:
+        return platform_id1 == platform_id2
+    
+    # 如果一个是v3格式，一个是v4格式（或者都是v4但不同实例），则通过平台类型匹配
+    return True
 
-def find_compatible_reminder_key(reminder_data, target_origin):
+def find_compatible_reminder_key(reminder_data, target_origin, compatibility_handler=None):
     """在提醒数据中查找与目标origin兼容的key
     
     Args:
         reminder_data: 提醒数据字典
         target_origin: 目标统一消息来源字符串
+        compatibility_handler: 可选的兼容性处理器，用于更精确的匹配
         
     Returns:
         str or None: 找到的兼容key，如果没找到返回None
@@ -401,7 +485,14 @@ def find_compatible_reminder_key(reminder_data, target_origin):
     
     # 然后尝试兼容性匹配
     for existing_key in reminder_data.keys():
-        if is_compatible_platform_origin(existing_key, target_origin):
+        if compatibility_handler:
+            # 使用兼容性处理器的精确匹配
+            is_compatible = compatibility_handler.is_compatible_origin(existing_key, target_origin)
+        else:
+            # 回退到原始的兼容性匹配
+            is_compatible = is_compatible_platform_origin(existing_key, target_origin)
+            
+        if is_compatible:
             logger.info(f"找到兼容的提醒数据key: {existing_key} <-> {target_origin}")
             return existing_key
     
@@ -411,8 +502,9 @@ def find_compatible_reminder_key(reminder_data, target_origin):
 class CompatibilityHandler:
     """处理v3/v4兼容性的工具类"""
     
-    def __init__(self, reminder_data):
+    def __init__(self, reminder_data, context=None):
         self.reminder_data = reminder_data
+        self.context = context
     
     def get_reminders(self, unified_msg_origin):
         """获取指定origin的提醒列表，支持兼容性查找"""
@@ -420,8 +512,8 @@ class CompatibilityHandler:
         if unified_msg_origin in self.reminder_data:
             return self.reminder_data[unified_msg_origin]
         
-        # 尝试兼容性查找
-        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+        # 尝试兼容性查找（使用自己的精确匹配）
+        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin, self)
         if compatible_key:
             return self.reminder_data[compatible_key]
         
@@ -433,8 +525,8 @@ class CompatibilityHandler:
         Returns:
             str: 实际使用的key
         """
-        # 检查是否有兼容的key存在
-        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+        # 检查是否有兼容的key存在（使用自己的精确匹配）
+        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin, self)
         
         if compatible_key:
             # 使用现有的兼容key
@@ -456,7 +548,7 @@ class CompatibilityHandler:
     
     def remove_reminder(self, unified_msg_origin, index):
         """删除提醒，使用兼容性处理"""
-        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin)
+        compatible_key = find_compatible_reminder_key(self.reminder_data, unified_msg_origin, self)
         
         if not compatible_key:
             return None, "没有找到对应的提醒数据"
@@ -470,4 +562,55 @@ class CompatibilityHandler:
     
     def get_actual_key(self, unified_msg_origin):
         """获取实际使用的key"""
-        return find_compatible_reminder_key(self.reminder_data, unified_msg_origin) or unified_msg_origin 
+        return find_compatible_reminder_key(self.reminder_data, unified_msg_origin, self) or unified_msg_origin
+    
+    def is_compatible_origin(self, origin1, origin2):
+        """使用context检查两个origin是否兼容"""
+        if origin1 == origin2:
+            return True
+        
+        # 解析两个origin
+        parts1 = origin1.split(":", 2) if origin1 and ":" in origin1 else []
+        parts2 = origin2.split(":", 2) if origin2 and ":" in origin2 else []
+        
+        if len(parts1) < 3 or len(parts2) < 3:
+            return False
+        
+        platform1, msg_type1, session1 = parts1
+        platform2, msg_type2, session2 = parts2
+        
+        # 消息类型和会话ID必须相同
+        if msg_type1 != msg_type2 or session1 != session2:
+            return False
+        
+        # 如果platform_id完全相同，直接匹配
+        if platform1 == platform2:
+            return True
+        
+        # 使用系统查询获取真实的平台类型
+        platform_type1 = get_platform_type_from_system(platform1, self.context)
+        platform_type2 = get_platform_type_from_system(platform2, self.context)
+        
+        # 如果系统查询失败，回退到字符串分析
+        if platform_type1 == platform1:
+            platform_type1 = get_platform_type_from_origin(origin1)
+        if platform_type2 == platform2:
+            platform_type2 = get_platform_type_from_origin(origin2)
+        
+        # 平台类型必须相同才能兼容
+        if platform_type1 != platform_type2:
+            return False
+        
+        # v3格式的平台名称列表
+        v3_platform_names = [
+            "aiocqhttp", "qq_official", "discord", "slack", "telegram", 
+            "wechatmp", "wechatferry", "wecom", "weixin_official_account",
+            "satori", "webchat"
+        ]
+        
+        # 如果都是v3格式，必须完全匹配
+        if platform1 in v3_platform_names and platform2 in v3_platform_names:
+            return platform1 == platform2
+        
+        # 如果一个是v3格式，一个是v4格式（或者都是v4但不同实例），则通过平台类型匹配
+        return True 

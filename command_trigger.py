@@ -18,7 +18,7 @@ class CommandTrigger:
         self.original_send_method = None  # 保存原始的send方法
         self.target_event = None  # 目标事件对象
         self.event_factory = EventFactory(context)  # 事件工厂
-    
+        
     def _add_at_message(self, msg_chain, original_msg_origin, reminder):
         """添加@消息的helper函数"""
         platform_type = get_platform_type_from_origin(original_msg_origin)
