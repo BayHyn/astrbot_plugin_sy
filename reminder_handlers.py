@@ -89,6 +89,8 @@ class ReminderMessageHandler:
                 
                 # 如果没有命中上述规则，返回原始ID
                 return session_id
+            elif platform_type == "lark":
+                return session_id
             else:
                 # 非微信平台，使用通用规则
                 parts = session_id.rsplit(":", 1)
