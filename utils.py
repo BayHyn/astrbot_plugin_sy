@@ -76,6 +76,35 @@ async def save_reminder_data(data_file: str, reminder_data: dict):
     with open(data_file, "w", encoding='utf-8') as f:
         json.dump(reminder_data, f, ensure_ascii=False)
 
+def check_reminder_limit(reminder_data: dict, session_key: str, max_reminders_per_user: int, unique_session: bool, creator_id: str = None) -> tuple:
+    '''检查提醒数量限制
+    
+    Args:
+        reminder_data: 提醒数据字典
+        session_key: 会话键
+        max_reminders_per_user: 每用户最大提醒数量（0表示不限制）
+        unique_session: 是否启用会话隔离
+        creator_id: 创建者ID（用于会话隔离模式）
+        
+    Returns:
+        tuple: (是否可以创建, 错误消息)
+    '''
+    if max_reminders_per_user <= 0:
+        return True, None
+    
+    if unique_session:
+        # 会话隔离模式：只计算当前用户在当前会话的提醒数量
+        current_count = len(reminder_data.get(session_key, []))
+        if current_count >= max_reminders_per_user:
+            return False, f"提醒创建失败：已达到每用户最大提醒数量限制({max_reminders_per_user})。请删除一些旧提醒后再试。"
+    else:
+        # 全局模式：计算所有会话中的提醒总数
+        total_count = sum(len(reminders) for reminders in reminder_data.values())
+        if total_count >= max_reminders_per_user:
+            return False, f"提醒创建失败：已达到全局最大提醒数量限制({max_reminders_per_user})。请删除一些旧提醒后再试。"
+    
+    return True, None
+
 # 法定节假日相关功能
 class HolidayManager:
     def __init__(self):

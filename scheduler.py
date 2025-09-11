@@ -117,8 +117,13 @@ class ReminderScheduler:
                     continue
                 
                 # 生成唯一的任务ID，添加时间戳确保唯一性
-                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+                timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]  # 包含毫秒
                 job_id = f"reminder_{group}_{i}_{timestamp}"
+                
+                # 确保任务ID唯一性，如果存在则添加额外标识
+                while any(job.id == job_id for job in self.scheduler.get_jobs()):
+                    import random
+                    job_id = f"reminder_{group}_{i}_{timestamp}_{random.randint(1000, 9999)}"
                 
                 # 根据重复类型设置不同的触发器
                 if reminder.get("repeat") == "daily":
@@ -283,6 +288,31 @@ class ReminderScheduler:
                         id=job_id
                     )
                     logger.info(f"添加一次性提醒: {reminder['text']} 时间: {dt.strftime('%Y-%m-%d %H:%M')} ID: {job_id}")
+                
+                # 更新提醒数据中的job_id（重载后会生成新的ID）
+                # 这样确保数据文件中保存的job_id始终是当前调度器中实际的ID
+                reminder["job_id"] = job_id
+                self.reminder_data[group][i] = reminder
+        
+        # 保存更新后的数据到文件（包含新的job_id）
+        try:
+            from .utils import save_reminder_data
+            import asyncio
+            
+            # 检查是否有正在运行的事件循环
+            try:
+                loop = asyncio.get_running_loop()
+                # 如果有运行中的循环，使用 create_task 异步保存
+                asyncio.create_task(save_reminder_data(self.data_file, self.reminder_data))
+                logger.info("已提交保存更新后的提醒数据任务（包含新的job_id）")
+            except RuntimeError:
+                # 没有运行中的循环，直接同步保存
+                import json
+                with open(self.data_file, "w", encoding='utf-8') as f:
+                    json.dump(self.reminder_data, f, ensure_ascii=False)
+                logger.info("已同步保存更新后的提醒数据（包含新的job_id）")
+        except Exception as e:
+            logger.error(f"保存更新后的提醒数据失败: {str(e)}")
     
     async def _check_and_execute_workday(self, unified_msg_origin: str, reminder: dict):
         '''检查当天是否为工作日，如果是则执行提醒'''
@@ -351,7 +381,17 @@ class ReminderScheduler:
             if compatible_key:
                 # 查找并删除这个提醒
                 for i, r in enumerate(self.reminder_data[compatible_key]):
-                    if r == reminder:  # 比较整个字典
+                    if (r.get('text') == reminder.get('text') and 
+                        r.get('datetime') == reminder.get('datetime') and
+                        r.get('creator_id') == reminder.get('creator_id')):  # 更精确的匹配
+                        # 如果有保存的任务ID，尝试删除调度任务
+                        if r.get('job_id'):
+                            try:
+                                self.scheduler.remove_job(r['job_id'])
+                                logger.info(f"Removed scheduler job: {r['job_id']}")
+                            except Exception as e:
+                                logger.warning(f"Failed to remove scheduler job {r['job_id']}: {str(e)}")
+                        
                         self.reminder_data[compatible_key].pop(i)
                         logger.info(f"One-time {'task' if is_task else 'reminder'} removed: {reminder['text']}")
                         await save_reminder_data(self.data_file, self.reminder_data)
@@ -359,8 +399,14 @@ class ReminderScheduler:
     
     def add_job(self, msg_origin, reminder, dt):
         '''添加定时任务'''
-        # 生成唯一的任务ID
-        job_id = f"reminder_{msg_origin}_{len(self.reminder_data[msg_origin])-1}"
+        # 生成唯一的任务ID，使用时间戳确保唯一性
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S%f")[:-3]  # 包含毫秒
+        job_id = f"reminder_{msg_origin}_{len(self.reminder_data[msg_origin])-1}_{timestamp}"
+        
+        # 确保任务ID唯一性，如果存在则添加额外标识
+        while any(job.id == job_id for job in self.scheduler.get_jobs()):
+            import random
+            job_id = f"reminder_{msg_origin}_{len(self.reminder_data[msg_origin])-1}_{timestamp}_{random.randint(1000, 9999)}"
         
         # 根据重复类型设置不同的触发器
         if reminder.get("repeat") == "daily":
@@ -512,6 +558,7 @@ class ReminderScheduler:
                 misfire_grace_time=60,
                 id=job_id
             )
+        logger.info(f"Successfully added job: {job_id}")
         return job_id
     
     def remove_job(self, job_id):

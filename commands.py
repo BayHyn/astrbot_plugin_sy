@@ -169,20 +169,39 @@ class ReminderCommands:
             yield event.plain_result(actual_key)  # actual_key 包含错误信息
             return
         
-        # 尝试删除调度任务 - 通过遍历所有任务找到匹配的
+        # 尝试删除调度任务 - 优先使用保存的任务ID
         job_found = False
-        for job in self.scheduler_manager.scheduler.get_jobs(): 
-            if job.id.startswith(f"reminder_{actual_key}_{index-1}_"):
-                try:
-                    self.scheduler_manager.remove_job(job.id)
-                    logger.info(f"Successfully removed job: {job.id}")
-                    job_found = True
-                    break
-                except JobLookupError:
-                    logger.error(f"Job not found: {job.id}")
+        
+        # 如果有保存的任务ID，直接删除
+        if removed_item.get('job_id'):
+            try:
+                self.scheduler_manager.remove_job(removed_item['job_id'])
+                logger.info(f"Successfully removed job by stored ID: {removed_item['job_id']}")
+                job_found = True
+            except Exception as e:
+                logger.warning(f"Failed to remove job by stored ID {removed_item['job_id']}: {str(e)}")
+        
+        # 如果直接删除失败，则通过内容匹配删除
+        if not job_found:
+            for job in self.scheduler_manager.scheduler.get_jobs():
+                if job.id.startswith(f"reminder_") and len(job.args) >= 2:
+                    try:
+                        # 检查任务参数中的提醒内容是否匹配
+                        job_session_id = job.args[0]
+                        job_reminder = job.args[1]
+                        if (job_session_id == actual_key and 
+                            isinstance(job_reminder, dict) and
+                            job_reminder.get('text') == removed_item.get('text') and
+                            job_reminder.get('datetime') == removed_item.get('datetime')):
+                            self.scheduler_manager.remove_job(job.id)
+                            logger.info(f"Successfully removed job by content match: {job.id}")
+                            job_found = True
+                            break
+                    except Exception as e:
+                        logger.error(f"Error checking job {job.id}: {str(e)}")
         
         if not job_found:
-            logger.warning(f"No job found for reminder_{actual_key}_{index-1}")
+            logger.warning(f"No matching job found for removed item: {removed_item.get('text', 'unknown')}")
             
         await save_reminder_data(self.data_file, self.reminder_data)
         
@@ -315,6 +334,10 @@ class ReminderCommands:
 
 注：时间格式为 HH:MM 或 HHMM，如 8:05 或 0805
 
+10. 数量限制
+   每个用户最多可创建 {max_reminders} 个提醒和任务
+   {limit_scope_description}
+
 指令任务自定义标识说明：
 - 使用 ---- 分隔符可以自定义指令任务的标识文字
 - 格式：指令----位置--自定义文字
@@ -323,7 +346,9 @@ class ReminderCommands:
 - 如果不使用 ---- 分隔符，默认显示 [指令任务]
 
 法定节假日数据来源：http://timor.tech/api/holiday""".format(
-           session_isolation_status="当前已开启会话隔离" if self.unique_session else "当前未开启会话隔离"
+           session_isolation_status="当前已开启会话隔离" if self.unique_session else "当前未开启会话隔离",
+           max_reminders=self.star.max_reminders_per_user if self.star.max_reminders_per_user > 0 else "无限制",
+           limit_scope_description="- 会话隔离开启：每个用户在每个群聊中独立计算" if self.unique_session else "- 会话隔离关闭：全局共享限制（所有用户共用）"
         )
         yield event.plain_result(help_text)
 
@@ -431,6 +456,10 @@ class ReminderCommands:
    - workday: 仅工作日触发（法定节假日不触发）
    - holiday: 仅法定节假日触发
 
+10. 数量限制
+   每个用户最多可创建 {} 个提醒和任务
+   {}
+
 注：时间格式为 HH:MM 或 HHMM，如 8:05 或 0805
 
 指令任务自定义标识说明：
@@ -440,7 +469,10 @@ class ReminderCommands:
 - 示例：/rmd--ls----before--每日提醒 或 /rmd--ls----after--执行完成
 - 如果不使用 ---- 分隔符，默认显示 [指令任务]
 
-法定节假日数据来源：http://timor.tech/api/holiday"""
+法定节假日数据来源：http://timor.tech/api/holiday""".format(
+            self.star.max_reminders_per_user if self.star.max_reminders_per_user > 0 else "无限制",
+            "- 会话隔离开启：每个用户在每个群聊中独立计算" if self.unique_session else "- 会话隔离关闭：全局共享限制（所有用户共用）"
+        )
         yield event.plain_result(help_text)
 
     async def list_remote_reminders(self, event: AstrMessageEvent, group_id: str):
@@ -585,13 +617,39 @@ class ReminderCommands:
             yield event.plain_result(actual_key)  # actual_key 包含错误信息
             return
             
-        # 尝试删除调度任务
-        job_id = f"reminder_{actual_key}_{index-1}"
-        try:
-            self.scheduler_manager.remove_job(job_id)
-            logger.info(f"Successfully removed job: {job_id}")
-        except JobLookupError:
-            logger.error(f"Job not found: {job_id}")
+        # 尝试删除调度任务 - 优先使用保存的任务ID
+        job_found = False
+        
+        # 如果有保存的任务ID，直接删除
+        if removed_item.get('job_id'):
+            try:
+                self.scheduler_manager.remove_job(removed_item['job_id'])
+                logger.info(f"Successfully removed job by stored ID: {removed_item['job_id']}")
+                job_found = True
+            except Exception as e:
+                logger.warning(f"Failed to remove job by stored ID {removed_item['job_id']}: {str(e)}")
+        
+        # 如果直接删除失败，则通过内容匹配删除
+        if not job_found:
+            for job in self.scheduler_manager.scheduler.get_jobs():
+                if job.id.startswith(f"reminder_") and len(job.args) >= 2:
+                    try:
+                        # 检查任务参数中的提醒内容是否匹配
+                        job_session_id = job.args[0]
+                        job_reminder = job.args[1]
+                        if (job_session_id == actual_key and 
+                            isinstance(job_reminder, dict) and
+                            job_reminder.get('text') == removed_item.get('text') and
+                            job_reminder.get('datetime') == removed_item.get('datetime')):
+                            self.scheduler_manager.remove_job(job.id)
+                            logger.info(f"Successfully removed job by content match: {job.id}")
+                            job_found = True
+                            break
+                    except Exception as e:
+                        logger.error(f"Error checking job {job.id}: {str(e)}")
+        
+        if not job_found:
+            logger.warning(f"No matching job found for removed item: {removed_item.get('text', 'unknown')}")
         await save_reminder_data(self.data_file, self.reminder_data)
         
         is_command_task = removed_item.get("is_command_task", False)

@@ -3,7 +3,7 @@ from typing import Union
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context
 from astrbot.api import logger
-from .utils import parse_datetime, save_reminder_data
+from .utils import parse_datetime, save_reminder_data, check_reminder_limit
 
 class ReminderTools:
     def __init__(self, star_instance):
@@ -68,6 +68,17 @@ class ReminderTools:
             # 使用兼容性处理器确保key存在
             actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
             
+            # 检查提醒数量限制
+            can_create, error_msg = check_reminder_limit(
+                self.reminder_data, 
+                actual_key, 
+                self.star.max_reminders_per_user, 
+                self.unique_session, 
+                creator_id
+            )
+            if not can_create:
+                return error_msg
+            
             # 处理重复类型和节假日类型的组合
             final_repeat = repeat or "none"
             if repeat and holiday_type:
@@ -88,8 +99,9 @@ class ReminderTools:
             # 解析时间
             dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
             
-            # 设置定时任务
-            self.scheduler_manager.add_job(actual_key, reminder, dt)
+            # 设置定时任务并保存任务ID
+            job_id = self.scheduler_manager.add_job(actual_key, reminder, dt)
+            reminder["job_id"] = job_id  # 保存任务ID到提醒数据中
             
             await save_reminder_data(self.data_file, self.reminder_data)
             
@@ -151,6 +163,17 @@ class ReminderTools:
             # 使用兼容性处理器确保key存在
             actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
             
+            # 检查提醒数量限制
+            can_create, error_msg = check_reminder_limit(
+                self.reminder_data, 
+                actual_key, 
+                self.star.max_reminders_per_user, 
+                self.unique_session, 
+                creator_id
+            )
+            if not can_create:
+                return error_msg
+            
             # 处理重复类型和节假日类型的组合
             final_repeat = repeat or "none"
             if repeat and holiday_type:
@@ -171,8 +194,9 @@ class ReminderTools:
             # 解析时间
             dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
             
-            # 设置定时任务
-            self.scheduler_manager.add_job(actual_key, task, dt)
+            # 设置定时任务并保存任务ID
+            job_id = self.scheduler_manager.add_job(actual_key, task, dt)
+            task["job_id"] = job_id  # 保存任务ID到任务数据中
             
             await save_reminder_data(self.data_file, self.reminder_data)
             
@@ -349,25 +373,39 @@ class ReminderTools:
                 # 调试信息：打印正在删除的任务
                 logger.info(f"Attempting to delete {'task' if reminder.get('is_task', False) else 'reminder'}: {reminder}")
                 
-                # 尝试删除调度任务
-                job_id = f"reminder_{actual_key}_{i}"
-                try:
-                    self.scheduler_manager.remove_job(job_id)
-                    logger.info(f"Successfully removed job: {job_id}")
-                except Exception as e:
-                    logger.error(f"Error removing job {job_id}: {str(e)}")
+                # 尝试删除调度任务 - 优先使用保存的任务ID
+                job_found = False
                 
-                # 以防万一，也检查其他可能的任务
-                for job in self.scheduler_manager.scheduler.get_jobs():
-                    if len(job.args) >= 2 and isinstance(job.args[1], dict):
-                        job_reminder = job.args[1]
-                        if (job_reminder.get('text') == reminder['text'] and 
-                            job_reminder.get('datetime') == reminder['datetime']):
+                # 如果有保存的任务ID，直接删除
+                if reminder.get('job_id'):
+                    try:
+                        self.scheduler_manager.remove_job(reminder['job_id'])
+                        logger.info(f"Successfully removed job by stored ID: {reminder['job_id']}")
+                        job_found = True
+                    except Exception as e:
+                        logger.warning(f"Failed to remove job by stored ID {reminder['job_id']}: {str(e)}")
+                
+                # 如果直接删除失败，则通过内容匹配删除
+                if not job_found:
+                    for job in self.scheduler_manager.scheduler.get_jobs():
+                        if job.id.startswith(f"reminder_") and len(job.args) >= 2:
                             try:
-                                logger.info(f"Removing additional job: {job.id}")
-                                job.remove()
+                                # 检查任务参数中的提醒内容是否匹配
+                                job_session_id = job.args[0]
+                                job_reminder = job.args[1]
+                                if (job_session_id == actual_key and 
+                                    isinstance(job_reminder, dict) and
+                                    job_reminder.get('text') == reminder['text'] and
+                                    job_reminder.get('datetime') == reminder['datetime']):
+                                    self.scheduler_manager.remove_job(job.id)
+                                    logger.info(f"Successfully removed job by content match: {job.id}")
+                                    job_found = True
+                                    break
                             except Exception as e:
-                                logger.error(f"Error removing additional job {job.id}: {str(e)}")
+                                logger.error(f"Error checking job {job.id}: {str(e)}")
+                
+                if not job_found:
+                    logger.warning(f"No matching job found for removed item: {reminder.get('text', 'unknown')}")
                 
                 deleted_reminders.append(reminder)
                 reminders.pop(i)

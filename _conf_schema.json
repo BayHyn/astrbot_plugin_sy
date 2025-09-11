@@ -56,5 +56,12 @@
         "hint": "启用后，指令任务执行时只显示自定义文本，不显示方括号和指令详情。",
         "obvious_hint": true,
         "default": false
+    },
+    "max_reminders_per_user": {
+        "description": "每个用户最大提醒数量",
+        "type": "int",
+        "hint": "限制每个用户能创建的提醒和任务总数，防止恶意用户批量创建过多提醒。设置为0表示不限制。建议设置为10-30之间。（注意，会话隔离关闭的话将变为全局所有群的总数量）",
+        "obvious_hint": true,
+        "default": 15
     }
 } 

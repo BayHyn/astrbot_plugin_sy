@@ -569,6 +569,19 @@ class UnifiedCommandProcessor:
             # 5. 确保key存在
             actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
 
+            # 5.1. 检查提醒数量限制
+            from .utils import check_reminder_limit
+            can_create, error_msg = check_reminder_limit(
+                self.reminder_data, 
+                actual_key, 
+                self.star.max_reminders_per_user, 
+                self.unique_session, 
+                creator_id
+            )
+            if not can_create:
+                yield event.plain_result(error_msg)
+                return
+
             # 6. 处理日期时间
             dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
             dt = DateTimeProcessor.adjust_datetime_for_week(dt, week)
@@ -594,8 +607,9 @@ class UnifiedCommandProcessor:
             # 9. 保存数据
             self.reminder_data[actual_key].append(item)
 
-            # 10. 设置定时任务
-            self.scheduler_manager.add_job(actual_key, item, dt)
+            # 10. 设置定时任务并保存任务ID
+            job_id = self.scheduler_manager.add_job(actual_key, item, dt)
+            item["job_id"] = job_id  # 保存任务ID到数据中
 
             # 11. 保存数据文件
             from .utils import save_reminder_data

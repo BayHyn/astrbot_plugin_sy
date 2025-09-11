@@ -10,7 +10,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.2.9")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.0")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -24,6 +24,9 @@ class SmartReminder(Star):
         self.enable_task_at = self.config.get("enable_task_at", True)
         self.enable_command_at = self.config.get("enable_command_at", False)
         self.hide_command_identifier = self.config.get("hide_command_identifier", False)
+        
+        # 用户限制配置
+        self.max_reminders_per_user = self.config.get("max_reminders_per_user", 15)
         
         # 数据文件路径处理 - 符合框架规范并保持向后兼容
         # 首先检查旧位置是否有数据，如果有则迁移到新位置
@@ -100,6 +103,7 @@ class SmartReminder(Star):
         logger.info(f"任务@功能：{'启用' if self.enable_task_at else '禁用'}")
         logger.info(f"指令任务@功能：{'启用' if self.enable_command_at else '禁用'}")
         logger.info(f"隐藏指令任务标识：{'启用' if self.hide_command_identifier else '禁用'}")
+        logger.info(f"每用户最大提醒数：{self.max_reminders_per_user if self.max_reminders_per_user > 0 else '不限制'}")
         logger.info(f"v3/v4兼容性处理：已启用")
 
     @filter.llm_tool(name="set_reminder")
