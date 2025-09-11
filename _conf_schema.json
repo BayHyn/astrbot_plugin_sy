@@ -57,10 +57,17 @@
         "obvious_hint": true,
         "default": false
     },
+    "custom_command_prefix": {
+        "description": "自定义命令符号",
+        "type": "string",
+        "hint": "自定义指令任务中命令的识别符号。默认是'/'，可以改为其他符号如'!'、'#'等，也可以留空表示不需要任何符号开头。",
+        "obvious_hint": true,
+        "default": "/"
+    },
     "max_reminders_per_user": {
         "description": "每个用户最大提醒数量",
         "type": "int",
-        "hint": "限制每个用户能创建的提醒和任务总数，防止恶意用户批量创建过多提醒。设置为0表示不限制。建议设置为10-30之间。（注意，会话隔离关闭的话将变为全局所有群的总数量）",
+        "hint": "限制每个用户能创建的提醒和任务总数，防止恶意用户批量创建过多提醒。设置为0表示不限制。建议设置为10-30之间。",
         "obvious_hint": true,
         "default": 15
     }

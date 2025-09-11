@@ -108,12 +108,13 @@ class CommandUtils:
         }
     
     @staticmethod
-    def validate_commands(commands: List[str]) -> Tuple[bool, str]:
+    def validate_commands(commands: List[str], custom_prefix: str = "/") -> Tuple[bool, str]:
         """
         验证命令列表的有效性
         
         Args:
             commands: 命令列表
+            custom_prefix: 自定义命令符号，默认为"/"，可以为空字符串表示无需符号
             
         Returns:
             Tuple[bool, str]: (是否有效, 错误信息)
@@ -122,11 +123,16 @@ class CommandUtils:
             return False, "没有有效的命令"
         
         for i, cmd in enumerate(commands):
-            if not cmd.startswith('/'):
-                return False, f"命令 {i+1} 格式错误，必须以 / 开头：{cmd}"
+            # 如果自定义前缀为空，则不检查前缀
+            if custom_prefix and not cmd.startswith(custom_prefix):
+                return False, f"命令 {i+1} 格式错误，必须以 {custom_prefix} 开头：{cmd}"
             
             # 检查命令长度
-            if len(cmd) < 2:
+            if len(cmd) < 1:
+                return False, f"命令 {i+1} 太短：{cmd}"
+            
+            # 如果有前缀，检查去掉前缀后的长度
+            if custom_prefix and len(cmd) <= len(custom_prefix):
                 return False, f"命令 {i+1} 太短：{cmd}"
         
         return True, ""
@@ -499,6 +505,7 @@ class UnifiedCommandProcessor:
         self.scheduler_manager = star_instance.scheduler_manager
         self.unique_session = star_instance.unique_session
         self.tools = star_instance.tools
+        self.custom_command_prefix = star_instance.custom_command_prefix
     
     async def process_add_item(self, event: AstrMessageEvent, item_type: str, content: str, 
                               time_str: str, week: str = None, repeat: str = None, 
@@ -546,7 +553,7 @@ class UnifiedCommandProcessor:
                 display_command, commands, custom_identifier = CommandUtils.parse_multi_command(content)
                 
                 # 验证命令列表
-                is_valid, error_msg = CommandUtils.validate_commands(commands)
+                is_valid, error_msg = CommandUtils.validate_commands(commands, self.custom_command_prefix)
                 if not is_valid:
                     yield event.plain_result(f"指令格式错误：{error_msg}")
                     return

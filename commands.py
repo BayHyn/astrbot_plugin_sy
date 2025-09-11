@@ -210,7 +210,7 @@ class ReminderCommands:
         
         if is_command_task:
             item_type = "指令任务"
-            display_text = f"/{removed_item['text']}"
+            display_text = f"{removed_item['text']}"
         elif is_task:
             item_type = "任务"
             display_text = removed_item['text']
