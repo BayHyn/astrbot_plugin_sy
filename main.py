@@ -10,7 +10,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.1")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.2")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -108,7 +108,6 @@ class SmartReminder(Star):
         logger.info(f"隐藏指令任务标识：{'启用' if self.hide_command_identifier else '禁用'}")
         logger.info(f"自定义命令符号：'{self.custom_command_prefix}' {'(无符号)' if not self.custom_command_prefix else ''}")
         logger.info(f"每用户最大提醒数：{self.max_reminders_per_user if self.max_reminders_per_user > 0 else '不限制'}")
-        logger.info(f"v3/v4兼容性处理：已启用")
 
     @filter.llm_tool(name="set_reminder")
     async def set_reminder(self, event, text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):

@@ -5,41 +5,178 @@ import aiohttp
 from astrbot.api import logger
 
 def parse_datetime(datetime_str: str) -> str:
-    '''解析时间字符串，支持简单时间格式，可选择星期'''
+    '''解析时间字符串，支持多种时间格式'''
     try:
         today = datetime.datetime.now()
+        
+        # 记录原始输入
+        original_input = datetime_str
+        logger.info(f"parse_datetime 收到输入: '{original_input}'")
         
         # 处理输入字符串，去除多余空格
         datetime_str = datetime_str.strip()
         
-        # 解析时间
-        try:
-            hour, minute = map(int, datetime_str.split(':'))
-        except ValueError:
+        # 支持中文冒号和英文冒号
+        datetime_str = datetime_str.replace('：', ':')
+        
+        # 尝试解析全连字符格式（如：2025-09-17-06:00 或 09-17-06:00）
+        if '-' in datetime_str and ':' in datetime_str:
+            # logger.info(f"尝试解析全连字符格式: '{datetime_str}'")
             try:
-                # 尝试处理无冒号格式 (如 "0805")
-                if len(datetime_str) == 4:
-                    hour = int(datetime_str[:2])
-                    minute = int(datetime_str[2:])
+                parts = datetime_str.split('-')
+                logger.info(f"分割结果: {parts}, 长度: {len(parts)}")
+                if len(parts) == 4:  # 格式：YYYY-MM-DD-HH:MM
+                    year = int(parts[0])
+                    month = int(parts[1])
+                    day = int(parts[2])
+                    time_part = parts[3]
+                    if ':' in time_part:
+                        hour, minute = map(int, time_part.split(':'))
+                    else:
+                        raise ValueError("时间部分格式错误")
+                    
+                    # 验证日期时间有效性
+                    dt = datetime.datetime(year, month, day, hour, minute)
+                    
+                    # 检查时间是否在过去，如果是过去的年份则调整
+                    if dt.year < today.year:
+                        dt = dt.replace(year=today.year)
+                    # 如果时间已过且不是当前时间（精确到分钟），调整为明年
+                    current_time_min = today.replace(second=0, microsecond=0)
+                    if dt < today and dt != current_time_min:
+                        dt = dt.replace(year=today.year + 1)
+                    
+                    return dt.strftime("%Y-%m-%d %H:%M")
+                    
+                elif len(parts) == 3:  # 格式：MM-DD-HH:MM（只有月份）
+                    month = int(parts[0])
+                    day = int(parts[1])
+                    time_part = parts[2]
+                    if ':' in time_part:
+                        hour, minute = map(int, time_part.split(':'))
+                    else:
+                        raise ValueError("时间部分格式错误")
+                    
+                    # 使用今年作为默认年份
+                    year = today.year
+                    dt = datetime.datetime(year, month, day, hour, minute)
+                    
+                    # 如果时间已过且不是当前时间（精确到分钟），使用明年
+                    current_time_min = today.replace(second=0, microsecond=0)
+                    if dt < today and dt != current_time_min:
+                        dt = dt.replace(year=year + 1)
+                    
+                    return dt.strftime("%Y-%m-%d %H:%M")
                 else:
-                    raise ValueError()
-            except:
-                raise ValueError("时间格式错误，请使用 HH:MM 格式（如 8:05）或 HHMM 格式（如 0805）")
+                    # 如果分割结果不是3或4个部分，格式不正确
+                    raise ValueError(f"分割结果长度错误: {len(parts)}")
+            except ValueError as e:
+                logger.error(f"全连字符格式解析失败: {str(e)}")
+                if "设置的时间不能是过去的时间" in str(e):
+                    raise e
+                raise ValueError("全连字符格式错误，请使用 YYYY-MM-DD-HH:MM 或 MM-DD-HH:MM 格式")
         
-        if not (0 <= hour <= 23 and 0 <= minute <= 59):
-            raise ValueError("时间超出范围")
-            
-        # 设置时间
-        dt = today.replace(hour=hour, minute=minute)
-        if dt < today:  # 如果时间已过，设置为明天
-            dt += datetime.timedelta(days=1)
+        # 尝试解析完整的年月日时分格式（无符号）如：202509170600
+        if len(datetime_str) == 12 and datetime_str.isdigit():
+            try:
+                year = int(datetime_str[:4])
+                month = int(datetime_str[4:6])
+                day = int(datetime_str[6:8])
+                hour = int(datetime_str[8:10])
+                minute = int(datetime_str[10:12])
+                
+                # 验证日期时间有效性
+                dt = datetime.datetime(year, month, day, hour, minute)
+                
+                # 检查时间是否在过去，如果是过去的年份则调整
+                if dt.year < today.year:
+                    dt = dt.replace(year=today.year)
+                # 如果时间已过且不是当前时间（精确到分钟），调整为明年
+                current_time_min = today.replace(second=0, microsecond=0)
+                if dt < today and dt != current_time_min:
+                    dt = dt.replace(year=today.year + 1)
+                
+                return dt.strftime("%Y-%m-%d %H:%M")
+            except ValueError as e:
+                if "设置的时间不能是过去的时间" in str(e):
+                    raise e
+                raise ValueError("完整时间格式错误，请使用 YYYYMMDDHHII 格式（如 202509170600）")
         
-        return dt.strftime("%Y-%m-%d %H:%M")
+        # 尝试解析月份无符号格式（如：09170600）
+        if len(datetime_str) == 8 and datetime_str.isdigit():
+            try:
+                month = int(datetime_str[:2])
+                day = int(datetime_str[2:4])
+                hour = int(datetime_str[4:6])
+                minute = int(datetime_str[6:8])
+                
+                # 使用今年作为默认年份
+                year = today.year
+                dt = datetime.datetime(year, month, day, hour, minute)
+                
+                # 如果时间已过且不是当前时间（精确到分钟），使用明年
+                current_time_min = today.replace(second=0, microsecond=0)
+                if dt < today and dt != current_time_min:
+                    dt = dt.replace(year=year + 1)
+                
+                return dt.strftime("%Y-%m-%d %H:%M")
+            except ValueError as e:
+                raise ValueError("月份时间格式错误，请使用 MMDDHHII 格式（如 09170600）")
+        
+        # 尝试解析带冒号的时间格式
+        if ':' in datetime_str:
+            # logger.info(f"尝试解析带冒号格式: '{datetime_str}'")
+            parts = datetime_str.split(':')
+            if len(parts) == 2:
+                # HH:MM 格式
+                try:
+                    hour, minute = map(int, parts)
+                    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                        raise ValueError("时间超出范围")
+                    
+                    # 设置时间
+                    dt = today.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                    # 如果时间已过且不是当前时间（精确到分钟），设置为明天
+                    current_time_min = today.replace(second=0, microsecond=0)
+                    if dt < today and dt != current_time_min:
+                        dt += datetime.timedelta(days=1)
+                    
+                    return dt.strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    raise ValueError("时间格式错误，请使用 HH:MM 格式（如 8:05）")
+            else:
+                raise ValueError("时间格式错误，请使用 HH:MM 格式（如 8:05）")
+        
+        # 尝试解析无冒号的时间格式
+        if len(datetime_str) == 4 and datetime_str.isdigit():
+            try:
+                hour = int(datetime_str[:2])
+                minute = int(datetime_str[2:])
+                
+                if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                    raise ValueError("时间超出范围")
+                
+                # 设置时间
+                dt = today.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                # 如果时间已过且不是当前时间（精确到分钟），设置为明天
+                current_time_min = today.replace(second=0, microsecond=0)
+                if dt < today and dt != current_time_min:
+                    dt += datetime.timedelta(days=1)
+                
+                return dt.strftime("%Y-%m-%d %H:%M")
+            except ValueError:
+                raise ValueError("时间格式错误，请使用 HHMM 格式（如 0805）")
+        
+        # 如果都不匹配，抛出错误
+        logger.error(f"parse_datetime 无法解析输入: '{original_input}' - 所有格式都不匹配")
+        raise ValueError("时间格式错误，支持格式：HH:MM（如 8:05）、HHMM（如 0805）、YYYYMMDDHHII（如 202509170600）、YYYY-MM-DD-HH:MM（如 2025-09-17-06:00）、MM-DD-HH:MM（如 09-17-06:00）、MMDDHHII（如 09170600）")
         
     except Exception as e:
         if isinstance(e, ValueError):
+            logger.error(f"parse_datetime 解析失败，输入: '{original_input}', 错误: {str(e)}")
             raise e
-        raise ValueError("时间格式错误，请使用 HH:MM 格式（如 8:05）或 HHMM 格式（如 0805）")
+        logger.error(f"parse_datetime 发生未知错误，输入: '{original_input}', 错误: {str(e)}")
+        raise ValueError("时间格式错误，支持格式：HH:MM（如 8:05）、HHMM（如 0805）、YYYYMMDDHHII（如 202509170600）、YYYY-MM-DD-HH:MM（如 2025-09-17-06:00）、MM-DD-HH:MM（如 09-17-06:00）、MMDDHHII（如 09170600）")
 
 def is_outdated(reminder: dict) -> bool:
     '''检查提醒是否过期'''

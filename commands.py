@@ -272,20 +272,30 @@ class ReminderCommands:
 
 1. 添加提醒：
    /rmd add <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
+   
+   时间格式支持：
+   - HH:MM 或 HH：MM (如 8:05)
+   - HHMM (如 0805)
+   - YYYYMMDDHHII (如 202509170600)
+   - YYYY-MM-DD-HH:MM (如 2025-09-17-06:00)
+   - MM-DD-HH:MM (如 09-17-06:00)
+   - MMDDHHII (如 09170600)
+   
    例如：
    - /rmd add 写周报 8:05
    - /rmd add 吃饭 8:05 sun daily (从周日开始每天)
-   - /rmd add 开会 8:05 mon weekly (每周一)
-   - /rmd add 交房租 8:05 fri monthly (从周五开始每月)
+   - /rmd add 开会 2025-09-17-08:00 (指定具体日期)
+   - /rmd add 交房租 09-01-08:00 monthly (每月1号)
    - /rmd add 上班打卡 8:30 daily workday (每个工作日，法定节假日不触发)
    - /rmd add 休息提醒 9:00 daily holiday (每个法定节假日触发)
 
 2. 添加任务：
    /rmd task <内容> <时间> [开始星期] [重复类型] [--holiday_type=...]
-   例如：
+   
+   时间格式同上，例如：
    - /rmd task 发送天气预报 8:00
    - /rmd task 汇总今日新闻 18:00 daily
-   - /rmd task 推送工作安排 9:00 mon weekly workday (每周一工作日推送)
+   - /rmd task 推送工作安排 09-01-09:00 monthly workday (每月1号工作日推送)
 
 2.5. 添加指令任务：
    /rmd command <指令> <时间> [开始星期] [重复类型] [--holiday_type=...]
