@@ -246,7 +246,7 @@
 ## 作者
 
 - 作者：kjqwdw
-- 版本：v1.3.4
+- 版本：v1.3.5
 
 ## 更新日志
 
@@ -260,7 +260,7 @@
 
 ## 支持
 
-如需帮助，请参考 [AstrBot插件开发文档](https://astrbot.soulter.top/center/docs/%E5%BC%80%E5%8F%91/%E6%8F%92%E4%BB%B6%E5%BC%80%E5%8F%91/)
+如需帮助，请参考 [AstrBot插件开发文档](https://docs.astrbot.app/dev/star/plugin.html/)
 
 ## 问题反馈
 
