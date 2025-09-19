@@ -180,7 +180,7 @@ class ParameterValidator:
         'fri': 4, 'sat': 5, 'sun': 6
     }
     
-    REPEAT_TYPES = ["daily", "weekly", "monthly", "yearly"]
+    REPEAT_TYPES = ["daily", "weekly", "monthly", "yearly", "none"]
     HOLIDAY_TYPES = ["workday", "holiday"]
     
     @staticmethod
@@ -223,7 +223,7 @@ class ParameterValidator:
 
         # 验证重复类型
         if repeat and repeat.lower() not in ParameterValidator.REPEAT_TYPES:
-            return False, "重复类型错误，可选值：daily,weekly,monthly,yearly", None, None, None
+            return False, "重复类型错误，可选值：daily,weekly,monthly,yearly,none", None, None, None
             
         # 验证节假日类型
         if holiday_type and holiday_type.lower() not in ParameterValidator.HOLIDAY_TYPES:

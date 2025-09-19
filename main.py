@@ -118,11 +118,11 @@ class SmartReminder(Star):
         '''设置一个提醒或任务，到时间后会提醒用户或让AI执行该任务
         
         Args:
-            text(string): 提醒内容或任务内容，如果是任务且要调用其他llm函数，请告诉ai（比如，请调用llm函数，内容是...），或者ai自行决断要使用的工具
+            text(string): 提醒内容或任务内容，如果是任务且要调用其他llm函数，请告诉ai（比如，请调用llm函数，内容是...）
             datetime_str(string): 提醒/任务时间，格式为 %Y-%m-%d %H:%M
             is_task(string): 是否为任务，"no"为提醒(到时间提醒用户)，"yes"为任务(到时间让AI执行操作)
             user_name(string): 提醒对象名称，默认为"用户"（仅在is_task="no"时有效）
-            repeat(string): 重复类型，可选值：daily(每天)，weekly(每周)，monthly(每月)，yearly(每年)，none(不重复)
+            repeat(string): 重复类型，可选值：daily(每天)，weekly(每周)，monthly(每月)，yearly(每年)，none(不重复)。
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
             group_id(string): 可选，指定群聊ID，用于在特定群聊中设置提醒或任务
         '''
@@ -137,7 +137,7 @@ class SmartReminder(Star):
                             content: str = None,           # 提醒/任务内容关键词
                             time: str = None,              # 具体时间点 HH:MM
                             weekday: str = None,           # 星期 mon,tue,wed,thu,fri,sat,sun
-                            repeat_type: str = None,       # 重复类型 daily,weekly,monthly,yearly
+                            repeat_type: str = None,       # 重复类型 daily,weekly,monthly,yearly,none
                             date: str = None,              # 具体日期 YYYY-MM-DD
                             all: str = None,               # 是否删除所有 "yes"/"no"
                             task_only: str = "no",         # 是否只删除任务 "yes"/"no"
@@ -150,7 +150,7 @@ class SmartReminder(Star):
             content(string): 可选，提醒或任务内容包含的关键词
             time(string): 可选，具体时间点，格式为 HH:MM，如 "08:00"
             weekday(string): 可选，星期几，可选值：mon,tue,wed,thu,fri,sat,sun
-            repeat_type(string): 可选，重复类型，可选值：daily,weekly,monthly,yearly
+            repeat_type(string): 可选，重复类型，可选值：daily,weekly,monthly,yearly,none
             date(string): 可选，具体日期，格式为 YYYY-MM-DD，如 "2024-02-09"
             all(string): 可选，是否删除所有提醒和任务，可选值：yes/no，默认no
             task_only(string): 可选，是否只删除任务，可选值：yes/no，默认no
@@ -194,7 +194,7 @@ class SmartReminder(Star):
             text(string): 提醒内容
             time_str(string): 时间，格式为 HH:MM 或 HHMM
             week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
-            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly或带节假日类型的组合（如daily workday）
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly,none或带节假日类型的组合（如daily workday）
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
         '''
         async for result in self.commands.add_reminder(event, text, time_str, week, repeat, holiday_type):
