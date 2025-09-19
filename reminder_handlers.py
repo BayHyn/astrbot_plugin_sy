@@ -19,9 +19,14 @@ class ReminderMessageHandler:
     
     def _add_at_message(self, msg_chain, original_msg_origin, reminder):
         """添加@消息的helper函数"""
-        platform_type = get_platform_type_from_origin(original_msg_origin)
+        platform_type = get_platform_type_from_origin(original_msg_origin, self.context)
+        logger.info(f"@消息调试 - 平台类型: {platform_type}, original_msg_origin: {original_msg_origin}")
         if platform_type == "aiocqhttp":
-            msg_chain.chain.append(At(qq=reminder["creator_id"]))
+            # QQ平台 - 优先使用昵称，回退到ID
+            if "creator_name" in reminder and reminder["creator_name"]:
+                msg_chain.chain.append(At(qq=reminder["creator_id"], name=reminder["creator_name"]))
+            else:
+                msg_chain.chain.append(At(qq=reminder["creator_id"]))
         elif platform_type in self.wechat_platforms:
             if "creator_name" in reminder and reminder["creator_name"]:
                 msg_chain.chain.append(Plain(f"@{reminder['creator_name']} "))
@@ -41,7 +46,7 @@ class ReminderMessageHandler:
     def get_original_session_id(self, session_id: str) -> str:
         """从隔离格式的会话ID中提取原始会话ID，用于消息发送"""
         # 检查是否是微信平台
-        platform_type = get_platform_type_from_origin(session_id)
+        platform_type = get_platform_type_from_origin(session_id, self.context)
         is_wechat_platform = platform_type in self.wechat_platforms
         
         # 处理微信群聊的特殊情况
@@ -116,9 +121,13 @@ class ReminderMessageHandler:
             should_at = self.config.get("enable_reminder_at", True)
         
         if should_at and not self.is_private_chat(original_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-            platform_type = get_platform_type_from_origin(original_msg_origin)
+            platform_type = get_platform_type_from_origin(original_msg_origin, self.context)
             if platform_type == "aiocqhttp":
-                msg.chain.append(At(qq=reminder["creator_id"]))  # QQ平台
+                # QQ平台 - 优先使用昵称，回退到ID
+                if "creator_name" in reminder and reminder["creator_name"]:
+                    msg.chain.append(At(qq=reminder["creator_id"], name=reminder["creator_name"]))
+                else:
+                    msg.chain.append(At(qq=reminder["creator_id"]))
             elif platform_type in self.wechat_platforms:
                 # 所有微信平台 - 使用用户名/昵称而不是ID
                 if "creator_name" in reminder and reminder["creator_name"]:
@@ -346,7 +355,7 @@ class TaskExecutor:
             msg.group_id = None
             
         # 使用兼容性工具来提取平台类型
-        platform_name = get_platform_type_from_origin(unified_msg_origin)
+        platform_name = get_platform_type_from_origin(unified_msg_origin, self.context)
 
         # 创建事件对象 - 重要：session_id只需要ID部分，不要包含平台前缀
         raw_session_id = send_session_id
@@ -640,9 +649,13 @@ class TaskExecutor:
             is_private_chat = self.message_handler.is_private_chat(unified_msg_origin)
             original_msg_origin = self._get_send_session_id(unified_msg_origin, is_private_chat)
             if not self.message_handler.is_private_chat(unified_msg_origin) and "creator_id" in reminder and reminder["creator_id"]:
-                platform_type = get_platform_type_from_origin(original_msg_origin)
+                platform_type = get_platform_type_from_origin(original_msg_origin, self.context)
                 if platform_type == "aiocqhttp":
-                    final_msg.chain.append(At(qq=reminder["creator_id"]))
+                    # QQ平台 - 优先使用昵称，回退到ID
+                    if "creator_name" in reminder and reminder["creator_name"]:
+                        final_msg.chain.append(At(qq=reminder["creator_id"], name=reminder["creator_name"]))
+                    else:
+                        final_msg.chain.append(At(qq=reminder["creator_id"]))
                 elif platform_type in self.wechat_platforms:
                     if "creator_name" in reminder and reminder["creator_name"]:
                         final_msg.chain.append(Plain(f"@{reminder['creator_name']} "))
@@ -807,7 +820,7 @@ class TaskExecutor:
             return send_session_id
         else:
             # 如果不是正确格式，尝试构造
-            platform_name = get_platform_type_from_origin(unified_msg_origin)
+            platform_name = get_platform_type_from_origin(unified_msg_origin, self.context)
             msg_type = "FriendMessage" if is_private_chat else "GroupMessage"
             return f"{platform_name}:{msg_type}:{send_session_id}"
     

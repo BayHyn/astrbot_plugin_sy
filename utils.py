@@ -573,7 +573,7 @@ def normalize_unified_msg_origin(unified_msg_origin):
     
     return unified_msg_origin
 
-def get_platform_type_from_origin(unified_msg_origin):
+def get_platform_type_from_origin(unified_msg_origin, context=None):
     """从unified_msg_origin中提取平台类型
     
     注意：这个函数只用于判断平台类型，不应该用于构建新的origin
@@ -581,6 +581,7 @@ def get_platform_type_from_origin(unified_msg_origin):
     
     Args:
         unified_msg_origin: 统一消息来源字符串
+        context: AstrBot上下文对象，用于获取平台实例（可选）
         
     Returns:
         str: 平台类型名称 (如 aiocqhttp, discord 等)
@@ -589,6 +590,15 @@ def get_platform_type_from_origin(unified_msg_origin):
         return "unknown"
     
     platform_part = unified_msg_origin.split(":", 1)[0]
+    
+    # 如果有context，尝试通过平台管理器获取真实的适配器类型
+    if context:
+        try:
+            platform_inst = context.get_platform_inst(platform_part)
+            if platform_inst:
+                return platform_inst.meta().name
+        except Exception as e:
+            logger.warning(f"通过context获取平台类型失败: {e}")
     
     # v3格式的平台名称
     v3_platform_names = [

@@ -46,7 +46,7 @@ class EventFactory:
             parts = unified_msg_origin.split(":")
             if len(parts) >= 3:
                 # 使用兼容性工具提取平台类型，而不是直接使用第一部分
-                platform_name = get_platform_type_from_origin(unified_msg_origin)
+                platform_name = get_platform_type_from_origin(unified_msg_origin, self.context)
                 msg_type_str = parts[1]
                 session_id = ":".join(parts[2:])  # 可能包含多个冒号
                 

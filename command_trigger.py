@@ -21,10 +21,14 @@ class CommandTrigger:
         
     def _add_at_message(self, msg_chain, original_msg_origin, reminder):
         """添加@消息的helper函数"""
-        platform_type = get_platform_type_from_origin(original_msg_origin)
+        platform_type = get_platform_type_from_origin(original_msg_origin, self.context)
         if platform_type == "aiocqhttp":
             from astrbot.api.message_components import At
-            msg_chain.chain.append(At(qq=reminder["creator_id"]))
+            # QQ平台 - 优先使用昵称，回退到ID
+            if "creator_name" in reminder and reminder["creator_name"]:
+                msg_chain.chain.append(At(qq=reminder["creator_id"], name=reminder["creator_name"]))
+            else:
+                msg_chain.chain.append(At(qq=reminder["creator_id"]))
         elif platform_type in self.wechat_platforms:
             if "creator_name" in reminder and reminder["creator_name"]:
                 msg_chain.chain.append(Plain(f"@{reminder['creator_name']} "))
@@ -177,7 +181,7 @@ class CommandTrigger:
                         identifier_text = f"[指令任务] {command_display}"
                 
                 # 如果包含视频且是QQ平台，需要分开发送
-                platform_type = get_platform_type_from_origin(original_msg_origin)
+                platform_type = get_platform_type_from_origin(original_msg_origin, self.context)
                 if has_video and platform_type == "aiocqhttp":
                     logger.info("检测到视频消息，QQ平台需要分开发送文字和视频")
                     

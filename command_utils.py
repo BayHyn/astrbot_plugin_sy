@@ -327,7 +327,7 @@ class ItemBuilder:
         return {
             "text": text,
             "datetime": dt.strftime("%Y-%m-%d %H:%M"),
-            "user_name": creator_id,
+            "user_name": creator_name or creator_id,  # 优先使用昵称，回退到ID
             "repeat": final_repeat,
             "creator_id": creator_id,
             "creator_name": creator_name,
@@ -341,7 +341,7 @@ class ItemBuilder:
         return {
             "text": text,
             "datetime": dt.strftime("%Y-%m-%d %H:%M"),
-            "user_name": "用户",
+            "user_name": creator_name or creator_id,  # 优先使用昵称，回退到ID
             "repeat": final_repeat,
             "creator_id": creator_id,
             "creator_name": creator_name,
@@ -357,7 +357,7 @@ class ItemBuilder:
             "text": clean_display_command,
             "commands": commands,
             "datetime": dt.strftime("%Y-%m-%d %H:%M"),
-            "user_name": "指令任务",
+            "user_name": creator_name or creator_id, 
             "repeat": final_repeat,
             "creator_id": creator_id,
             "creator_name": creator_name,
@@ -431,8 +431,18 @@ class SessionHelper:
         """
         creator_id = event.get_sender_id()
         creator_name = None
-        if hasattr(event.message_obj, 'sender') and hasattr(event.message_obj.sender, 'nickname'):
-            creator_name = event.message_obj.sender.nickname
+        
+        # 尝试多种方式获取用户昵称
+        try:
+            # 首先尝试使用 get_sender_name() 方法
+            creator_name = event.get_sender_name()
+            if not creator_name:
+                # 如果为空，再尝试直接访问属性
+                if hasattr(event.message_obj, 'sender') and hasattr(event.message_obj.sender, 'nickname'):
+                    creator_name = event.message_obj.sender.nickname
+        except Exception as e:
+            logger.warning(f"获取用户昵称失败: {e}")
+            
         return creator_id, creator_name
     
     @staticmethod
@@ -452,11 +462,14 @@ class SessionHelper:
         
         # 获取平台类型（兼容v3/v4）
         try:
-            from .utils import get_platform_type_from_origin
-            platform_name = get_platform_type_from_origin(event.unified_msg_origin)
-        except:
-            # 如果导入失败，使用备用方法
+            # 优先使用事件对象的方法
             platform_name = event.get_platform_name() if hasattr(event, 'get_platform_name') else 'unknown'
+            if platform_name == 'unknown':
+                # 如果失败，尝试从origin解析
+                from .utils import get_platform_type_from_origin
+                platform_name = get_platform_type_from_origin(event.unified_msg_origin)
+        except:
+            platform_name = 'unknown'
         
         if unique_session:
             # 使用会话隔离
