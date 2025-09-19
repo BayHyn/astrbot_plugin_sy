@@ -6,6 +6,13 @@
         "obvious_hint": true,
         "default": false
     },
+    "whitelist": {
+        "description": "用户白名单",
+        "type": "string",
+        "hint": "只允许白名单中的用户使用本插件功能。留空表示不限制。多个用户ID用英文逗号或中文逗号分隔，例如：user1,user2,user3 或 user1，user2，user3。不限制平台ID类型。",
+        "obvious_hint": true,
+        "default": ""
+    },
     "enable_context": {
         "description": "启用上下文功能",
         "type": "bool",

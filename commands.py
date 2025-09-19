@@ -1,7 +1,20 @@
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api import logger
-from .utils import save_reminder_data
+from .utils import save_reminder_data, check_permission_and_return_error
 from .command_utils import UnifiedCommandProcessor
+import functools
+
+def check_permission(func):
+    '''权限检查装饰器'''
+    @functools.wraps(func)
+    async def wrapper(self, event, *args, **kwargs):
+        error_msg = check_permission_and_return_error(event, self.star.whitelist)
+        if error_msg:
+            yield event.plain_result(error_msg)
+            return
+        async for result in func(self, event, *args, **kwargs):
+            yield result
+    return wrapper
 
 
 class ReminderCommands:
@@ -16,6 +29,7 @@ class ReminderCommands:
         # 初始化统一处理器
         self.processor = UnifiedCommandProcessor(star_instance)
 
+    @check_permission
     async def list_reminders(self, event: AstrMessageEvent):
         '''列出所有提醒和任务'''
         # 获取用户ID，用于会话隔离
@@ -130,6 +144,7 @@ class ReminderCommands:
             reminder_str += "\n使用 /rmd rm <序号> 删除提醒、任务或指令任务"
             yield event.plain_result(reminder_str)
 
+    @check_permission
     async def remove_reminder(self, event: AstrMessageEvent, index: int):
         '''删除提醒、任务或指令任务
         
@@ -224,6 +239,7 @@ class ReminderCommands:
         else:
             yield event.plain_result(f"已删除{item_type}：{display_text}")
 
+    @check_permission
     async def add_reminder(self, event: AstrMessageEvent, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''手动添加提醒
         
@@ -240,6 +256,7 @@ class ReminderCommands:
         ):
             yield result
 
+    @check_permission
     async def add_task(self, event: AstrMessageEvent, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''手动添加任务
         
@@ -256,6 +273,7 @@ class ReminderCommands:
         ):
             yield result
 
+    @check_permission
     async def show_help(self, event: AstrMessageEvent):
         '''显示帮助信息'''
         help_text = """提醒与任务功能指令说明：
@@ -356,6 +374,7 @@ class ReminderCommands:
         )
         yield event.plain_result(help_text)
 
+    @check_permission
     async def add_command_task(self, event: AstrMessageEvent, command: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''设置指令任务
         
@@ -374,6 +393,7 @@ class ReminderCommands:
 
 
 
+    @check_permission
     async def add_remote_reminder(self, event: AstrMessageEvent, group_id: str, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''在指定群聊中手动添加提醒'''
         async for result in self.processor.process_add_item(
@@ -381,6 +401,7 @@ class ReminderCommands:
         ):
             yield result
 
+    @check_permission
     async def add_remote_task(self, event: AstrMessageEvent, group_id: str, text: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''在指定群聊中手动添加任务'''
         async for result in self.processor.process_add_item(
@@ -388,6 +409,7 @@ class ReminderCommands:
         ):
             yield result
 
+    @check_permission
     async def add_remote_command_task(self, event: AstrMessageEvent, group_id: str, command: str, time_str: str, week: str = None, repeat: str = None, holiday_type: str = None):
         '''在指定群聊中设置指令任务'''
         async for result in self.processor.process_add_item(
@@ -395,6 +417,7 @@ class ReminderCommands:
         ):
             yield result
 
+    @check_permission
     async def show_remote_help(self, event: AstrMessageEvent):
         '''显示远程群聊帮助信息'''
         help_text = """远程群聊提醒与任务功能指令说明：
@@ -479,6 +502,7 @@ class ReminderCommands:
         )
         yield event.plain_result(help_text)
 
+    @check_permission
     async def list_remote_reminders(self, event: AstrMessageEvent, group_id: str):
         '''列出指定群聊中的所有提醒和任务'''
         # 获取用户ID，用于会话隔离
@@ -595,6 +619,7 @@ class ReminderCommands:
             reminder_str += f"\n使用 /rmdg rm {group_id} <序号> 删除提醒、任务或指令任务"
             yield event.plain_result(reminder_str)
 
+    @check_permission
     async def remove_remote_reminder(self, event: AstrMessageEvent, group_id: str, index: int):
         '''删除指定群聊中的提醒、任务或指令任务
         

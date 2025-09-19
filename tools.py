@@ -62,6 +62,13 @@ class ReminderTools:
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
             group_id(string): 可选，指定群聊ID，用于在特定群聊中设置提醒
         '''
+        # 权限检查
+        if hasattr(event, 'get_sender_id'):
+            from .utils import check_permission_and_return_error
+            error_msg = check_permission_and_return_error(event, self.star.whitelist)
+            if error_msg:
+                return error_msg
+        
         try:
             logger.info(f"set_reminder被调用: text='{text}', datetime_str='{datetime_str}', user_name='{user_name}', repeat='{repeat}', holiday_type='{holiday_type}', group_id='{group_id}'")
             
@@ -117,6 +124,13 @@ class ReminderTools:
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
             group_id(string): 可选，指定群聊ID，用于在特定群聊中设置任务
         '''
+        # 权限检查
+        if hasattr(event, 'get_sender_id'):
+            from .utils import check_permission_and_return_error
+            error_msg = check_permission_and_return_error(event, self.star.whitelist)
+            if error_msg:
+                return error_msg
+        
         try:
             # 如果是Context类型，无法使用统一处理器，使用原有逻辑
             if isinstance(event, Context):
@@ -333,6 +347,13 @@ class ReminderTools:
             reminder_only(string): 可选，是否只删除提醒，可选值：yes/no，默认no
             group_id(string): 可选，指定群聊ID，用于删除特定群聊中的提醒或任务
         '''
+        # 权限检查
+        if hasattr(event, 'get_sender_id'):
+            from .utils import check_permission_and_return_error
+            error_msg = check_permission_and_return_error(event, self.star.whitelist)
+            if error_msg:
+                return error_msg
+        
         try:
             if isinstance(event, Context):
                 msg_origin = self.context.get_event_queue()._queue[0].session_id

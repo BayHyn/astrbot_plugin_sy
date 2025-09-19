@@ -262,6 +262,46 @@ async def save_reminder_data(data_file: str, reminder_data: dict):
     with open(data_file, "w", encoding='utf-8') as f:
         json.dump(reminder_data, f, ensure_ascii=False)
 
+def check_user_permission(user_id: str, whitelist: str) -> tuple:
+    '''检查用户是否有权限使用插件
+    
+    Args:
+        user_id: 用户ID
+        whitelist: 白名单字符串，逗号分隔
+        
+    Returns:
+        tuple: (是否有权限, 错误消息)
+    '''
+    # 如果白名单为空，则不限制
+    if not whitelist or not whitelist.strip():
+        return True, None
+    
+    # 处理中英文逗号分隔
+    whitelist_clean = whitelist.replace('，', ',')  # 替换中文逗号为英文逗号
+    allowed_users = [user.strip() for user in whitelist_clean.split(',') if user.strip()]
+    
+    if not allowed_users:
+        return True, None
+    
+    if user_id in allowed_users:
+        return True, None
+    else:
+        return False, "抱歉，您没有权限使用此插件功能。"
+
+def check_permission_and_return_error(event, whitelist):
+    '''检查权限并返回错误信息（如果有）
+    
+    Args:
+        event: 事件对象
+        whitelist: 白名单字符串
+        
+    Returns:
+        str or None: 如果没有权限返回错误信息，否则返回None
+    '''
+    user_id = event.get_sender_id()
+    has_permission, error_msg = check_user_permission(user_id, whitelist)
+    return error_msg if not has_permission else None
+
 def check_reminder_limit(reminder_data: dict, session_key: str, max_reminders_per_user: int, unique_session: bool, creator_id: str = None) -> tuple:
     '''检查提醒数量限制
     
