@@ -4,6 +4,55 @@ import os
 import aiohttp
 from astrbot.api import logger
 
+def parse_datetime_for_llm(datetime_str: str) -> str:
+    '''专门为LLM工具解析时间字符串，只处理标准格式 %Y-%m-%d %H:%M'''
+    try:
+        datetime_str = datetime_str.strip()
+        
+        # 支持中文冒号和英文冒号
+        datetime_str = datetime_str.replace('：', ':')
+        
+        # 尝试直接解析标准格式：YYYY-MM-DD HH:MM
+        try:
+            dt = datetime.datetime.strptime(datetime_str, "%Y-%m-%d %H:%M")
+            
+            # 检查时间是否在过去（如果是过去时间，AI可能设置错了时间）
+            now = datetime.datetime.now()
+            if dt < now:
+                # 如果是过去的时间，我们假设AI想要设置明天的同一时间
+                # 或者如果是当年但过去的日期，调整为明年
+                if dt.date() < now.date():
+                    if dt.year == now.year:
+                        # 同年但过去的日期，调整为明年
+                        dt = dt.replace(year=now.year + 1)
+                    # 如果年份本身就是过去的，保持不变，可能AI故意设置历史时间
+                logger.info(f"时间调整: 原时间 '{datetime_str}' 在过去，调整为 '{dt.strftime('%Y-%m-%d %H:%M')}'")
+            
+            logger.info(f"LLM时间解析成功: '{datetime_str}' -> {dt.strftime('%Y-%m-%d %H:%M')}")
+            return dt.strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            # 如果标准格式失败，尝试其他常见格式
+            formats = [
+                "%Y-%m-%d %H:%M:%S",  # 带秒数
+                "%Y/%m/%d %H:%M",     # 斜杠分隔
+                "%Y/%m/%d %H:%M:%S",  # 斜杠分隔带秒数
+            ]
+            
+            for fmt in formats:
+                try:
+                    dt = datetime.datetime.strptime(datetime_str, fmt)
+                    logger.info(f"LLM时间解析成功 (格式 {fmt}): '{datetime_str}' -> {dt.strftime('%Y-%m-%d %H:%M')}")
+                    return dt.strftime("%Y-%m-%d %H:%M")
+                except ValueError:
+                    continue
+            
+            # 所有格式都失败
+            raise ValueError(f"无法解析时间格式: {datetime_str}，请使用 YYYY-MM-DD HH:MM 格式")
+            
+    except Exception as e:
+        logger.error(f"LLM时间解析失败: '{datetime_str}', 错误: {str(e)}")
+        raise ValueError(f"时间格式错误: {str(e)}")
+
 def parse_datetime(datetime_str: str) -> str:
     '''解析时间字符串，支持多种时间格式'''
     try:

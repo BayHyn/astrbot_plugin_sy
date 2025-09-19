@@ -3,7 +3,7 @@ from typing import Union
 from astrbot.api.event import AstrMessageEvent
 from astrbot.api.star import Context
 from astrbot.api import logger
-from .utils import parse_datetime, save_reminder_data, check_reminder_limit
+from .utils import parse_datetime_for_llm, save_reminder_data, check_reminder_limit
 
 class ReminderTools:
     def __init__(self, star_instance):
@@ -13,6 +13,16 @@ class ReminderTools:
         self.data_file = star_instance.data_file
         self.scheduler_manager = star_instance.scheduler_manager
         self.unique_session = star_instance.unique_session
+        # 延迟初始化统一处理器，避免循环依赖
+        self._processor = None
+    
+    @property
+    def processor(self):
+        """懒加载统一处理器实例"""
+        if self._processor is None:
+            from .command_utils import UnifiedCommandProcessor
+            self._processor = UnifiedCommandProcessor(self.star)
+        return self._processor
     
     def get_session_id(self, msg_origin, creator_id=None):
         """
@@ -41,7 +51,7 @@ class ReminderTools:
         
         return msg_origin
     
-    async def set_reminder(self, event: Union[AstrMessageEvent, Context], text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):
+    async def set_reminder(self, event: Union[AstrMessageEvent, Context], text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None, group_id: str = None):
         '''设置一个提醒
         
         Args:
@@ -50,20 +60,103 @@ class ReminderTools:
             user_name(string): 提醒对象名称，默认为"用户"
             repeat(string): 重复类型，可选值：daily(每天)，weekly(每周)，monthly(每月)，yearly(每年)，none(不重复)
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+            group_id(string): 可选，指定群聊ID，用于在特定群聊中设置提醒
         '''
         try:
+            logger.info(f"set_reminder被调用: text='{text}', datetime_str='{datetime_str}', user_name='{user_name}', repeat='{repeat}', holiday_type='{holiday_type}', group_id='{group_id}'")
+            
+            # 如果是Context类型，无法使用统一处理器，使用原有逻辑
             if isinstance(event, Context):
-                msg_origin = self.context.get_event_queue()._queue[0].session_id
-                creator_id = None  # Context 模式下无法获取创建者ID
-                creator_name = None
-            else:
-                raw_msg_origin = event.unified_msg_origin
-                creator_id = event.get_sender_id()
-                # 获取创建者昵称
-                creator_name = event.message_obj.sender.nickname if hasattr(event.message_obj, 'sender') and hasattr(event.message_obj.sender, 'nickname') else None
-                
-                # 使用会话隔离功能获取会话ID
-                msg_origin = self.get_session_id(raw_msg_origin, creator_id)
+                logger.info("使用Context模式的legacy方法")
+                return await self._legacy_set_reminder(event, text, datetime_str, user_name, repeat, holiday_type)
+            
+            # 为LLM工具使用简单的时间解析
+            try:
+                parsed_datetime_str = parse_datetime_for_llm(datetime_str)
+                logger.info(f"时间解析成功: '{datetime_str}' -> '{parsed_datetime_str}'")
+            except ValueError as e:
+                logger.error(f"时间解析失败: {e}")
+                return str(e)
+            
+            # 使用统一处理器处理提醒
+            logger.info("开始调用统一处理器")
+            result_message = None
+            async for result in self.processor.process_add_item(
+                event, 'reminder', text, parsed_datetime_str, None, repeat, holiday_type, group_id, time_already_parsed=True
+            ):
+                logger.info(f"收到统一处理器结果: {type(result)}")
+                # event.plain_result() 返回的是MessageEventResult对象
+                # 使用get_plain_text()方法提取纯文本消息
+                if hasattr(result, 'get_plain_text'):
+                    result_message = result.get_plain_text()
+                    logger.info(f"提取的消息 (get_plain_text): '{result_message}'")
+                elif hasattr(result, 'chain') and result.chain:
+                    # 手动提取链中的文本
+                    from astrbot.core.message.components import Plain
+                    texts = [comp.text for comp in result.chain if isinstance(comp, Plain)]
+                    result_message = " ".join(texts)
+                    logger.info(f"提取的消息 (chain): '{result_message}'")
+                else:
+                    result_message = str(result)
+                    logger.info(f"提取的消息 (str): '{result_message}'")
+                break  # 只获取第一个结果
+            
+            logger.info(f"最终返回消息: '{result_message}'")
+            return result_message or "设置提醒成功"
+                    
+        except Exception as e:
+            return f"设置提醒时出错：{str(e)}"
+    
+    async def set_task(self, event: Union[AstrMessageEvent, Context], text: str, datetime_str: str, repeat: str = None, holiday_type: str = None, group_id: str = None):
+        '''设置一个任务，到时间后会让AI执行该任务
+        
+        Args:
+            text(string): 任务内容，AI将执行的操作
+            datetime_str(string): 任务执行时间，格式为 %Y-%m-%d %H:%M
+            repeat(string): 重复类型，可选值：daily(每天)，weekly(每周)，monthly(每月)，yearly(每年)，none(不重复)
+            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
+            group_id(string): 可选，指定群聊ID，用于在特定群聊中设置任务
+        '''
+        try:
+            # 如果是Context类型，无法使用统一处理器，使用原有逻辑
+            if isinstance(event, Context):
+                return await self._legacy_set_task(event, text, datetime_str, repeat, holiday_type)
+            
+            # 为LLM工具使用简单的时间解析
+            try:
+                parsed_datetime_str = parse_datetime_for_llm(datetime_str)
+            except ValueError as e:
+                return str(e)
+            
+            # 使用统一处理器处理任务
+            result_message = None
+            async for result in self.processor.process_add_item(
+                event, 'task', text, parsed_datetime_str, None, repeat, holiday_type, group_id, time_already_parsed=True
+            ):
+                # event.plain_result() 返回的是MessageEventResult对象
+                # 使用get_plain_text()方法提取纯文本消息
+                if hasattr(result, 'get_plain_text'):
+                    result_message = result.get_plain_text()
+                elif hasattr(result, 'chain') and result.chain:
+                    # 手动提取链中的文本
+                    from astrbot.core.message.components import Plain
+                    texts = [comp.text for comp in result.chain if isinstance(comp, Plain)]
+                    result_message = " ".join(texts)
+                else:
+                    result_message = str(result)
+                break  # 只获取第一个结果
+            
+            return result_message or "设置任务成功"
+                    
+        except Exception as e:
+            return f"设置任务时出错：{str(e)}"
+    
+    async def _legacy_set_reminder(self, event: Context, text: str, datetime_str: str, user_name: str = "用户", repeat: str = None, holiday_type: str = None):
+        '''兼容Context模式的设置提醒方法（原有逻辑）'''
+        try:
+            msg_origin = self.context.get_event_queue()._queue[0].session_id
+            creator_id = None  # Context 模式下无法获取创建者ID
+            creator_name = None
             
             # 使用兼容性处理器确保key存在
             actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
@@ -136,29 +229,13 @@ class ReminderTools:
             
         except Exception as e:
             return f"设置提醒时出错：{str(e)}"
-    
-    async def set_task(self, event: Union[AstrMessageEvent, Context], text: str, datetime_str: str, repeat: str = None, holiday_type: str = None):
-        '''设置一个任务，到时间后会让AI执行该任务
-        
-        Args:
-            text(string): 任务内容，AI将执行的操作
-            datetime_str(string): 任务执行时间，格式为 %Y-%m-%d %H:%M
-            repeat(string): 重复类型，可选值：daily(每天)，weekly(每周)，monthly(每月)，yearly(每年)，none(不重复)
-            holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
-        '''
+
+    async def _legacy_set_task(self, event: Context, text: str, datetime_str: str, repeat: str = None, holiday_type: str = None):
+        '''兼容Context模式的设置任务方法（原有逻辑）'''
         try:
-            if isinstance(event, Context):
-                msg_origin = self.context.get_event_queue()._queue[0].session_id
-                creator_id = None  # Context 模式下无法获取创建者ID
-                creator_name = None
-            else:
-                raw_msg_origin = event.unified_msg_origin
-                creator_id = event.get_sender_id()
-                # 获取创建者昵称
-                creator_name = event.message_obj.sender.nickname if hasattr(event.message_obj, 'sender') and hasattr(event.message_obj.sender, 'nickname') else None
-                
-                # 使用会话隔离功能获取会话ID
-                msg_origin = self.get_session_id(raw_msg_origin, creator_id)
+            msg_origin = self.context.get_event_queue()._queue[0].session_id
+            creator_id = None  # Context 模式下无法获取创建者ID
+            creator_name = None
             
             # 使用兼容性处理器确保key存在
             actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
@@ -240,7 +317,8 @@ class ReminderTools:
                             date: str = None,              # 具体日期 YYYY-MM-DD
                             all: str = None,               # 是否删除所有 "yes"/"no"
                             task_only: str = "no",       # 是否只删除任务
-                            reminder_only: str = "no"    # 是否只删除提醒
+                            reminder_only: str = "no",    # 是否只删除提醒
+                            group_id: str = None          # 可选，指定群聊ID
                             ):
         '''删除符合条件的提醒或者任务，可组合多个条件进行精确筛选
         
@@ -253,17 +331,24 @@ class ReminderTools:
             all(string): 可选，是否删除所有提醒，可选值：yes/no，默认no
             task_only(string): 可选，是否只删除任务，可选值：yes/no，默认no
             reminder_only(string): 可选，是否只删除提醒，可选值：yes/no，默认no
+            group_id(string): 可选，指定群聊ID，用于删除特定群聊中的提醒或任务
         '''
         try:
             if isinstance(event, Context):
                 msg_origin = self.context.get_event_queue()._queue[0].session_id
                 creator_id = None
             else:
-                raw_msg_origin = event.unified_msg_origin
                 creator_id = event.get_sender_id()
                 
-                # 使用会话隔离功能获取会话ID
-                msg_origin = self.get_session_id(raw_msg_origin, creator_id)
+                if group_id:
+                    # 远程群聊操作 - 构建远程会话ID
+                    from .command_utils import SessionHelper
+                    msg_origin = SessionHelper.build_remote_session_id(event, group_id, self.unique_session)
+                else:
+                    # 本地操作
+                    raw_msg_origin = event.unified_msg_origin
+                    # 使用会话隔离功能获取会话ID
+                    msg_origin = self.get_session_id(raw_msg_origin, creator_id)
             
             # 调试信息：打印所有调度任务
             logger.info("Current jobs in scheduler:")
@@ -274,7 +359,8 @@ class ReminderTools:
             reminders = self.star.compatibility_handler.get_reminders(msg_origin)
             actual_key = self.star.compatibility_handler.get_actual_key(msg_origin)
             if not reminders:
-                return "当前没有任何提醒或任务。"
+                location_desc = f"群聊 {group_id} 中" if group_id else ""
+                return f"当前{location_desc}没有任何提醒或任务。"
             
             # 用于存储要删除的任务索引
             to_delete = []
@@ -363,7 +449,9 @@ class ReminderTools:
                     conditions.append("仅任务")
                 if reminder_only:
                     conditions.append("仅提醒")
-                return f"没有找到符合条件的提醒或任务：{', '.join(conditions)}"
+                
+                location_desc = f"群聊 {group_id} 中" if group_id else ""
+                return f"没有在{location_desc}找到符合条件的提醒或任务：{', '.join(conditions)}"
             
             # 从后往前删除，避免索引变化
             deleted_reminders = []
@@ -420,9 +508,11 @@ class ReminderTools:
                 logger.info(f"Job ID: {job.id}, Next run: {job.next_run_time}, Args: {job.args}")
             
             # 生成删除报告
+            location_desc = f"群聊 {group_id} 中的" if group_id else ""
+            
             if len(deleted_reminders) == 1:
                 item_type = "任务" if deleted_reminders[0].get("is_task", False) else "提醒"
-                return f"已删除{item_type}：{deleted_reminders[0]['text']}"
+                return f"已删除{location_desc}{item_type}：{deleted_reminders[0]['text']}"
             else:
                 tasks = []
                 reminders_list = []
@@ -433,7 +523,7 @@ class ReminderTools:
                     else:
                         reminders_list.append(f"- {r['text']}")
                 
-                result = f"已删除 {len(deleted_reminders)} 个项目："
+                result = f"已删除{location_desc} {len(deleted_reminders)} 个项目："
                 
                 if tasks:
                     result += f"\n\n任务({len(tasks)}):\n" + "\n".join(tasks)

@@ -371,14 +371,13 @@ class SessionHelper:
     """会话辅助工具类"""
     
     @staticmethod
-    def get_session_info(event: AstrMessageEvent, unique_session: bool, tools) -> Tuple[str, str, str]:
+    def get_session_info(event: AstrMessageEvent, unique_session: bool) -> Tuple[str, str, str]:
         """
         获取会话相关信息
         
         Args:
             event: 消息事件
             unique_session: 是否启用会话隔离
-            tools: 工具实例
             
         Returns:
             Tuple[str, str, str]: (creator_id, raw_msg_origin, msg_origin)
@@ -387,12 +386,37 @@ class SessionHelper:
         raw_msg_origin = event.unified_msg_origin
         
         if unique_session:
-            # 使用会话隔离
-            msg_origin = tools.get_session_id(raw_msg_origin, creator_id)
+            # 使用会话隔离 - 直接实现逻辑，避免依赖tools
+            msg_origin = SessionHelper._get_session_id_with_isolation(raw_msg_origin, creator_id)
         else:
             msg_origin = raw_msg_origin
             
         return creator_id, raw_msg_origin, msg_origin
+    
+    @staticmethod
+    def _get_session_id_with_isolation(msg_origin: str, creator_id: str = None) -> str:
+        """
+        根据会话隔离设置，获取正确的会话ID
+        
+        Args:
+            msg_origin: 原始会话ID
+            creator_id: 创建者ID
+            
+        Returns:
+            str: 处理后的会话ID
+        """
+        # 如果启用了会话隔离，并且有创建者ID，则在会话ID中添加用户标识
+        if creator_id and ":" in msg_origin:
+            # 在群聊环境中添加用户ID
+            if (":GroupMessage:" in msg_origin or 
+                "@chatroom" in msg_origin or
+                ":ChannelMessage:" in msg_origin):
+                # 分割会话ID并在末尾添加用户标识
+                parts = msg_origin.rsplit(":", 1)
+                if len(parts) == 2:
+                    return f"{parts[0]}:{parts[1]}_{creator_id}"
+        
+        return msg_origin
     
     @staticmethod
     def get_creator_info(event: AstrMessageEvent) -> Tuple[str, Optional[str]]:
@@ -504,12 +528,13 @@ class UnifiedCommandProcessor:
         self.data_file = star_instance.data_file
         self.scheduler_manager = star_instance.scheduler_manager
         self.unique_session = star_instance.unique_session
-        self.tools = star_instance.tools
+        # 移除对tools的直接引用，避免循环依赖
         self.custom_command_prefix = star_instance.custom_command_prefix
     
     async def process_add_item(self, event: AstrMessageEvent, item_type: str, content: str, 
                               time_str: str, week: str = None, repeat: str = None, 
-                              holiday_type: str = None, group_id: str = None):
+                              holiday_type: str = None, group_id: str = None, 
+                              time_already_parsed: bool = False):
         """
         统一处理添加项目的逻辑
         
@@ -522,18 +547,24 @@ class UnifiedCommandProcessor:
             repeat: 重复类型
             holiday_type: 节假日类型
             group_id: 群聊ID（远程操作时使用）
+            time_already_parsed: 时间是否已经解析过（LLM工具使用）
             
         Yields:
             消息结果
         """
         try:
             # 1. 解析时间
-            from .utils import parse_datetime
-            try:
-                datetime_str = parse_datetime(time_str)
-            except ValueError as e:
-                yield event.plain_result(str(e))
-                return
+            if time_already_parsed:
+                # 时间已经解析过，直接使用
+                datetime_str = time_str
+            else:
+                # 需要解析时间（手动命令使用）
+                from .utils import parse_datetime
+                try:
+                    datetime_str = parse_datetime(time_str)
+                except ValueError as e:
+                    yield event.plain_result(str(e))
+                    return
 
             # 2. 验证并调整参数
             success, error_msg, week, repeat, holiday_type = ParameterValidator.validate_and_adjust_parameters(
@@ -570,7 +601,7 @@ class UnifiedCommandProcessor:
             else:
                 # 本地操作
                 creator_id, raw_msg_origin, msg_origin = SessionHelper.get_session_info(
-                    event, self.unique_session, self.tools
+                    event, self.unique_session
                 )
 
             # 5. 确保key存在
