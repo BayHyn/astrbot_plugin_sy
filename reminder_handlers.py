@@ -291,6 +291,14 @@ class TaskExecutor:
                 sender_id = reminder.get("creator_id", "unknown")
                 return str(sender_id) if sender_id else "unknown"
             event.get_sender_id = get_sender_id
+
+        # 设置 sender 身份
+        creator_id = str(reminder.get("creator_id"))
+        admin_ids = self.context._config.get("admins_id", [])
+        if creator_id and creator_id in admin_ids:
+            event.role = "admin"
+        else:
+            event.role = "member"
         
         # 添加结果管理方法，支持复杂消息类型
         if not hasattr(event, '_result'):
