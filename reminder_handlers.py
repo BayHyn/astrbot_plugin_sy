@@ -6,7 +6,7 @@ from astrbot.api.event import MessageChain
 from astrbot.api.message_components import At, Plain
 from astrbot.api.platform import AstrBotMessage, PlatformMetadata, MessageType, MessageMember
 from astrbot.core.platform.astr_message_event import AstrMessageEvent, MessageSesion
-from .utils import get_platform_type_from_origin
+from .utils import get_platform_type_from_origin, get_platform_id_from_origin
 
 
 class ReminderMessageHandler:
@@ -299,7 +299,7 @@ class TaskExecutor:
             event.role = "admin"
         else:
             event.role = "member"
-        
+
         # 添加结果管理方法，支持复杂消息类型
         if not hasattr(event, '_result'):
             from astrbot.core.message.message_event_result import MessageEventResult
@@ -364,6 +364,7 @@ class TaskExecutor:
             
         # 使用兼容性工具来提取平台类型
         platform_name = get_platform_type_from_origin(unified_msg_origin, self.context)
+        platform_id = get_platform_id_from_origin(unified_msg_origin)
 
         # 创建事件对象 - 重要：session_id只需要ID部分，不要包含平台前缀
         raw_session_id = send_session_id
@@ -374,7 +375,7 @@ class TaskExecutor:
             else:
                 raw_session_id = send_session_id
         
-        meta = PlatformMetadata(platform_name, "scheduler")
+        meta = PlatformMetadata(platform_name, "scheduler", platform_id)
         event = AstrMessageEvent(
             message_str=task_text,
             message_obj=msg,
@@ -559,6 +560,10 @@ class TaskExecutor:
                         # 调用函数
                         if func_obj.handler:
                             func_result = await func_obj.handler(event, **func_args)
+                        elif func_obj.mcp_client:
+                            if not func_obj.mcp_client.session:
+                                raise RuntimeError(f"MCP客户端未初始化，无法调用函数 {func_name}")
+                            func_result = await func_obj.mcp_client.session.call_tool(func_name, func_args)
                         else:
                             func_result = await func_obj.execute(**func_args)
                         

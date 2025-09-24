@@ -6,6 +6,13 @@
         "obvious_hint": true,
         "default": false
     },
+    "wechat_platforms": {
+        "description": "微信Platform名",
+        "type": "list",
+        "hint": "消息平台接入的微信平台名，注意不是 机器人名称 ",
+        "obvious_hint": true,
+        "default": ["gewechat", "wechatpadpro", "wecom"]
+    },
     "whitelist": {
         "description": "用户白名单",
         "type": "string",

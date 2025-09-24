@@ -36,7 +36,7 @@ class ReminderScheduler:
         self.config = config or {}
         
         # 定义微信相关平台列表，用于特殊处理
-        self.wechat_platforms = ["gewechat", "wechatpadpro", "wecom"]
+        self.wechat_platforms = self.config.get("wechat_platforms", ["gewechat", "wechatpadpro", "wecom"])
         
         # 从全局注册表获取调度器，如果不存在则创建
         if sys._GLOBAL_SCHEDULER_REGISTRY['scheduler'] is None:
