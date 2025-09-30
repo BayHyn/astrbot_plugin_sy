@@ -88,7 +88,7 @@ class CommandTrigger:
             logger.info(f"已将指令事件 {command} 提交到事件队列")
             
             # 等待指令执行并捕获响应
-            max_wait_time = 20.0  # 最大等待20秒
+            max_wait_time = self.config.get('max_command_wait_time', 20.0)  # 从配置获取最大等待时间，默认20秒
             wait_interval = 0.1   # 每100毫秒检查一次
             waited_time = 0.0
             

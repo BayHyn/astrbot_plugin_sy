@@ -84,5 +84,12 @@
         "hint": "限制每个用户能创建的提醒和任务总数，防止恶意用户批量创建过多提醒。设置为0表示不限制。建议设置为10-30之间。",
         "obvious_hint": true,
         "default": 15
+    },
+    "max_command_wait_time": {
+        "description": "指令任务最大等待时间",
+        "type": "int",
+        "hint": "指令任务执行时等待响应的最大时间（秒）。如果指令执行时间较长，可以适当增加此值。建议设置为10-60之间。",
+        "obvious_hint": true,
+        "default": 20
     }
-} 
+}

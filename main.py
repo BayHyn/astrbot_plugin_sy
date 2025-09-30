@@ -10,7 +10,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.5")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.6")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -30,6 +30,9 @@ class SmartReminder(Star):
         
         # 用户限制配置
         self.max_reminders_per_user = self.config.get("max_reminders_per_user", 15)
+        
+        # 指令任务等待时间配置
+        self.max_command_wait_time = self.config.get("max_command_wait_time", 20)
         
         # 白名单配置
         self.whitelist = self.config.get("whitelist", "")
@@ -111,6 +114,7 @@ class SmartReminder(Star):
         logger.info(f"隐藏指令任务标识：{'启用' if self.hide_command_identifier else '禁用'}")
         logger.info(f"自定义命令符号：'{self.custom_command_prefix}' {'(无符号)' if not self.custom_command_prefix else ''}")
         logger.info(f"每用户最大提醒数：{self.max_reminders_per_user if self.max_reminders_per_user > 0 else '不限制'}")
+        logger.info(f"指令任务最大等待时间：{self.max_command_wait_time}秒")
         logger.info(f"用户白名单：{'已启用' if self.whitelist.strip() else '未启用'}")
 
     @filter.llm_tool(name="set_reminder_or_task")
