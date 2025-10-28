@@ -9,8 +9,9 @@ from .utils import load_reminder_data, CompatibilityHandler
 from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
+from .qq_id_cache import init_qq_id_cache
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.8")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.9")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -103,6 +104,9 @@ class SmartReminder(Star):
         
         # 初始化命令
         self.commands = ReminderCommands(self)
+        
+        # 设置延迟初始化QQ号缓存的定时任务
+        self._schedule_qq_id_cache_init()
         
         # 记录配置信息
         logger.info(f"智能提醒插件启动成功，会话隔离：{'启用' if self.unique_session else '禁用'}")
@@ -212,7 +216,7 @@ class SmartReminder(Star):
             text(string): 任务内容
             time_str(string): 时间，格式为 HH:MM 或 HHMM
             week(string): 可选，开始星期：mon,tue,wed,thu,fri,sat,sun
-            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly或带节假日类型的组合（如daily workday）
+            repeat(string): 可选，重复类型：daily,weekly,monthly,yearly,none或带节假日类型的组合（如daily workday）
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
         '''
         async for result in self.commands.add_task(event, text, time_str, week, repeat, holiday_type):
@@ -315,4 +319,22 @@ class SmartReminder(Star):
         '''
         async for result in self.commands.remove_remote_reminder(event, group_id, index):
             yield result
+
+
+    def _schedule_qq_id_cache_init(self):
+        """设置延迟初始化QQ号缓存的定时任务"""
+        import asyncio
+        
+        async def delayed_init():
+            # 等待8秒确保平台完全加载
+            await asyncio.sleep(8)
+            try:
+                logger.info("开始延迟初始化QQ号缓存")
+                init_qq_id_cache(self.context)
+                logger.info("QQ号缓存初始化完成")
+            except Exception as e:
+                logger.warning(f"QQ号缓存初始化失败: {e}")
+        
+        # 创建异步任务
+        asyncio.create_task(delayed_init())
 

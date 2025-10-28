@@ -1,5 +1,6 @@
 import time
 import asyncio
+import functools
 from typing import Optional
 from astrbot.api import logger
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
@@ -7,6 +8,7 @@ from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.message.components import Plain
 from .utils import get_platform_type_from_origin, get_platform_type_from_system
+from .qq_id_cache import get_cached_qq_id
 
 
 class EventFactory:
@@ -69,6 +71,65 @@ class EventFactory:
         # 根据平台类型创建正确的事件对象
         return self._create_platform_specific_event(platform_type, command, msg, meta, session_id, platform_instance)
     
+    def _get_real_self_id_sync(self, platform_instance) -> str:
+        """
+        同步方式获取真实的机器人ID
+        从QQ号缓存中获取，如果没有则返回默认值
+        """
+        try:
+            # 首先尝试从平台实例获取缓存的ID
+            if hasattr(platform_instance, '_cached_qq_id'):
+                cached_id = getattr(platform_instance, '_cached_qq_id')
+                if cached_id and cached_id != "123456789":
+                    return str(cached_id)
+            
+            # 如果平台实例没有缓存，尝试从全局缓存获取
+            if platform_instance:
+                from .qq_id_cache import _qq_cache
+                platform_id = getattr(platform_instance, 'platform_id', 'unknown')
+                
+                # 检查全局缓存
+                if platform_id in _qq_cache._cache:
+                    cached_qq_id = _qq_cache._cache[platform_id]
+                    if cached_qq_id and cached_qq_id != "123456789":
+                        # 将缓存的QQ号设置到平台实例中
+                        if hasattr(platform_instance, '__dict__'):
+                            platform_instance._cached_qq_id = cached_qq_id
+                        logger.info(f"从全局缓存获取QQ号: {cached_qq_id}")
+                        return str(cached_qq_id)
+            
+        except Exception as e:
+            logger.warning(f"获取缓存QQ号时出错: {e}")
+        
+        # 如果没有缓存，返回默认值
+        logger.info("使用默认机器人ID以确保稳定性")
+        return "123456789"
+    
+    async def _get_real_self_id_async(self, platform_instance) -> str:
+        """
+        异步方式获取真实的机器人ID
+        使用缓存工具获取真实QQ号
+        """
+        try:
+            if not platform_instance:
+                return "123456789"
+            
+            # 获取平台ID
+            platform_id = getattr(platform_instance, 'platform_name', 'unknown')
+            
+            # 使用缓存工具获取QQ号
+            qq_id = await get_cached_qq_id(platform_id, platform_instance)
+            
+            # 将QQ号缓存到平台实例中，供同步方法使用
+            if hasattr(platform_instance, '__dict__'):
+                platform_instance._cached_qq_id = qq_id
+            
+            return qq_id
+            
+        except Exception as e:
+            logger.error(f"异步获取真实机器人ID时发生错误: {e}")
+            return "123456789"
+    
     def _create_message_object(self, command: str, session_id: str, message_type: MessageType, 
                               creator_id: str, creator_name: str = None, platform_id: str = None) -> AstrBotMessage:
         """创建消息对象"""
@@ -82,12 +143,57 @@ class EventFactory:
         if platform_id:
             platform_instance = self._get_platform_instance(platform_id)
         
-        # 直接使用默认数字ID，避免复杂的获取逻辑和潜在的错误
-        msg.self_id = "123456789"
-        logger.info(f"使用默认机器人ID: {msg.self_id}")
+        # 使用同步方法获取真实的机器人ID
+        real_self_id = self._get_real_self_id_sync(platform_instance)
+        msg.self_id = real_self_id
+        logger.info(f"使用机器人ID: {msg.self_id}")
         
-        if platform_instance:
-            logger.debug(f"平台实例存在，但为了稳定性使用默认ID")
+        msg.message_id = "command_trigger_" + str(int(time.time()))
+        
+        # 设置发送者信息
+        from astrbot.api.platform import MessageMember
+        msg.sender = MessageMember(creator_id, creator_name or "用户")
+        
+        # 设置群组ID（如果是群聊）
+        if message_type == MessageType.GROUP_MESSAGE:
+            # 从session_id中提取群组ID
+            if "_" in session_id:
+                # 处理会话隔离格式
+                group_id = session_id.split("_")[0]
+            else:
+                group_id = session_id
+            msg.group_id = group_id
+        
+        # 设置消息链
+        msg.message = [Plain(command)]
+        
+        # 设置raw_message属性（模拟原始消息对象）
+        msg.raw_message = {
+            "message": command,
+            "message_type": message_type.value,
+            "sender": {"user_id": creator_id, "nickname": creator_name or "用户"},
+            "self_id": msg.self_id  # 使用获取到的真实self_id
+        }
+        
+        return msg
+    
+    async def create_message_object_async(self, command: str, session_id: str, message_type: MessageType, 
+                                        creator_id: str, creator_name: str = None, platform_id: str = None) -> AstrBotMessage:
+        """异步创建消息对象（可以获取更准确的机器人ID）"""
+        msg = AstrBotMessage()
+        msg.message_str = command
+        msg.session_id = session_id
+        msg.type = message_type
+        
+        # 尝试获取真实的self_id
+        platform_instance = None
+        if platform_id:
+            platform_instance = self._get_platform_instance(platform_id)
+        
+        # 使用异步方法获取真实的机器人ID
+        real_self_id = await self._get_real_self_id_async(platform_instance)
+        msg.self_id = real_self_id
+        logger.info(f"使用机器人ID: {msg.self_id}")
         
         msg.message_id = "command_trigger_" + str(int(time.time()))
         
