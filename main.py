@@ -10,7 +10,7 @@ from .scheduler import ReminderScheduler
 from .tools import ReminderTools
 from .commands import ReminderCommands
 
-@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.7")
+@register("ai_reminder", "kjqwdw", "智能定时任务，输入/rmd help查看帮助", "1.3.8")
 class SmartReminder(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
@@ -125,7 +125,7 @@ class SmartReminder(Star):
             text(string): 提醒内容或任务内容，如果是任务且要调用其他llm函数，请告诉ai（比如，请调用llm函数，内容是...）
             datetime_str(string): 提醒/任务时间，格式为 %Y-%m-%d %H:%M
             is_task(string): 是否为任务，"no"为提醒(到时间提醒用户)，"yes"为任务(到时间让AI执行操作)
-            user_name(string): 提醒对象名称，默认为"用户"（仅在is_task="no"时有效）
+            user_name(string): 提醒对象名称，默认为"用户"
             repeat(string): 重复类型，可选值：daily(每天)，weekly(每周)，monthly(每月)，yearly(每年)，none(不重复)。
             holiday_type(string): 可选，节假日类型：workday(仅工作日执行)，holiday(仅法定节假日执行)
             group_id(string): 可选，指定群聊ID，用于在特定群聊中设置提醒或任务

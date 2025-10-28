@@ -322,28 +322,32 @@ class ItemBuilder:
     
     @staticmethod
     def build_reminder_item(text: str, dt: datetime.datetime, creator_id: str, creator_name: str, 
-                          final_repeat: str) -> Dict[str, Any]:
+                          final_repeat: str, target_user_id: str = None) -> Dict[str, Any]:
         """构建提醒数据项"""
+        # 如果指定了目标用户ID，则使用目标用户ID，否则使用创建者ID
+        actual_creator_id = target_user_id if target_user_id else creator_id
         return {
             "text": text,
             "datetime": dt.strftime("%Y-%m-%d %H:%M"),
             "user_name": creator_name or creator_id,  # 优先使用昵称，回退到ID
             "repeat": final_repeat,
-            "creator_id": creator_id,
+            "creator_id": actual_creator_id,  # 使用实际的目标用户ID
             "creator_name": creator_name,
             "is_task": False
         }
     
     @staticmethod
     def build_task_item(text: str, dt: datetime.datetime, creator_id: str, creator_name: str, 
-                       final_repeat: str) -> Dict[str, Any]:
+                       final_repeat: str, target_user_id: str = None) -> Dict[str, Any]:
         """构建任务数据项"""
+        # 如果指定了目标用户ID，则使用目标用户ID，否则使用创建者ID
+        actual_creator_id = target_user_id if target_user_id else creator_id
         return {
             "text": text,
             "datetime": dt.strftime("%Y-%m-%d %H:%M"),
             "user_name": creator_name or creator_id,  # 优先使用昵称，回退到ID
             "repeat": final_repeat,
-            "creator_id": creator_id,
+            "creator_id": actual_creator_id,  # 使用实际的目标用户ID
             "creator_name": creator_name,
             "is_task": True
         }
@@ -444,6 +448,43 @@ class SessionHelper:
             logger.warning(f"获取用户昵称失败: {e}")
             
         return creator_id, creator_name
+    
+    @staticmethod
+    async def find_user_id_by_name(event: AstrMessageEvent, user_name: str) -> Optional[str]:
+        """
+        根据用户名查找用户ID（仅在群聊中有效）
+        
+        Args:
+            event: 消息事件
+            user_name: 要查找的用户名
+            
+        Returns:
+            Optional[str]: 找到的用户ID，如果未找到则返回None
+        """
+        # 只在群聊中进行查找
+        if event.is_private_chat():
+            return None
+            
+        try:
+            group_id = int(event.get_group_id())
+            # 获取群成员列表
+            members = await event.bot.get_group_member_list(group_id=group_id)
+            
+            # 遍历成员列表，查找匹配的用户名
+            for member in members:
+                if member.get("user_id"):
+                    # 检查昵称或群名片是否匹配
+                    nickname = member.get("nickname", "")
+                    card = member.get("card", "")
+                    
+                    # 优先匹配群名片，其次匹配昵称
+                    if (card and card == user_name) or (nickname and nickname == user_name):
+                        return str(member["user_id"])
+                        
+        except Exception as e:
+            logger.warning(f"查找用户ID失败: {e}")
+            
+        return None
     
     @staticmethod
     def build_remote_session_id(event: AstrMessageEvent, group_id: str, unique_session: bool) -> str:
@@ -547,7 +588,7 @@ class UnifiedCommandProcessor:
     async def process_add_item(self, event: AstrMessageEvent, item_type: str, content: str, 
                               time_str: str, week: str = None, repeat: str = None, 
                               holiday_type: str = None, group_id: str = None, 
-                              time_already_parsed: bool = False):
+                              time_already_parsed: bool = False, user_name: str = None):
         """
         统一处理添加项目的逻辑
         
@@ -617,6 +658,15 @@ class UnifiedCommandProcessor:
                     event, self.unique_session
                 )
 
+            # 4.1. 在群聊中根据user_name查找目标用户ID（仅对提醒和任务生效）
+            target_user_id = None
+            if item_type in ['reminder', 'task'] and user_name and event.get_group_id():
+                try:
+                    target_user_id = await SessionHelper.find_user_id_by_name(event, user_name)
+                except Exception as e:
+                    # 查找失败时保持原有逻辑，使用设置者的ID
+                    pass
+
             # 5. 确保key存在
             actual_key = self.star.compatibility_handler.ensure_key_exists(msg_origin)
 
@@ -648,11 +698,11 @@ class UnifiedCommandProcessor:
                 )
             elif item_type == 'task':
                 item = ItemBuilder.build_task_item(
-                    content, dt, creator_id, creator_name, final_repeat
+                    final_repeat, custom_identifier, role_name, target_user_id
                 )
             else:  # reminder
                 item = ItemBuilder.build_reminder_item(
-                    content, dt, creator_id, creator_name, final_repeat
+                    content, dt, creator_id, creator_name, final_repeat, target_user_id
                 )
 
             # 9. 保存数据
@@ -693,4 +743,4 @@ class UnifiedCommandProcessor:
 
         except Exception as e:
             item_type_name = {'reminder': '提醒', 'task': '任务', 'command_task': '指令任务'}.get(item_type, '项目')
-            yield event.plain_result(f"设置{item_type_name}时出错：{str(e)}") 
+            yield event.plain_result(f"设置{item_type_name}时出错：{str(e)}")
