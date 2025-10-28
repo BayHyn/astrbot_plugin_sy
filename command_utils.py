@@ -501,22 +501,22 @@ class SessionHelper:
         """
         creator_id = event.get_sender_id()
         
-        # 获取平台类型（兼容v3/v4）
+        # 获取平台ID（兼容v3/v4）
         try:
-            # 优先使用事件对象的方法
-            platform_name = event.get_platform_name() if hasattr(event, 'get_platform_name') else 'unknown'
-            if platform_name == 'unknown':
+            # 优先使用事件对象的方法获取平台ID
+            platform_id = event.get_platform_id() if hasattr(event, 'get_platform_id') else 'unknown'
+            if platform_id == 'unknown':
                 # 如果失败，尝试从origin解析
-                from .utils import get_platform_type_from_origin
-                platform_name = get_platform_type_from_origin(event.unified_msg_origin)
+                from .utils import get_platform_id_from_origin
+                platform_id = get_platform_id_from_origin(event.unified_msg_origin)
         except:
-            platform_name = 'unknown'
+            platform_id = 'unknown'
         
         if unique_session:
             # 使用会话隔离
-            return f"{platform_name}:GroupMessage:{group_id}_{creator_id}"
+            return f"{platform_id}:GroupMessage:{group_id}_{creator_id}"
         else:
-            return f"{platform_name}:GroupMessage:{group_id}"
+            return f"{platform_id}:GroupMessage:{group_id}"
 
 
 class ResultFormatter:

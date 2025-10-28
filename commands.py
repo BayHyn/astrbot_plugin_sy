@@ -508,15 +508,15 @@ class ReminderCommands:
         # 获取用户ID，用于会话隔离
         creator_id = event.get_sender_id()
         
-        # 获取平台名称
-        platform_name = event.get_platform_name()
+        # 获取平台ID（用户自定义的平台标识符）
+        platform_id = event.get_platform_id()
         
         # 构建远程群聊的会话ID
         if self.unique_session:
             # 使用会话隔离
-            msg_origin = f"{platform_name}:GroupMessage:{group_id}_{creator_id}"
+            msg_origin = f"{platform_id}:GroupMessage:{group_id}_{creator_id}"
         else:
-            msg_origin = f"{platform_name}:GroupMessage:{group_id}"
+            msg_origin = f"{platform_id}:GroupMessage:{group_id}"
             
         # 使用兼容性处理器获取提醒列表
         reminders = self.star.compatibility_handler.get_reminders(msg_origin)
@@ -630,15 +630,15 @@ class ReminderCommands:
         # 获取用户ID，用于会话隔离
         creator_id = event.get_sender_id()
         
-        # 获取平台名称
-        platform_name = event.get_platform_name()
+        # 获取平台ID（用户自定义的平台标识符）
+        platform_id = event.get_platform_id()
         
         # 构建远程群聊的会话ID
         if self.unique_session:
             # 使用会话隔离
-            msg_origin = f"{platform_name}:GroupMessage:{group_id}_{creator_id}"
+            msg_origin = f"{platform_id}:GroupMessage:{group_id}_{creator_id}"
         else:
-            msg_origin = f"{platform_name}:GroupMessage:{group_id}"
+            msg_origin = f"{platform_id}:GroupMessage:{group_id}"
             
         # 使用兼容性处理器删除提醒
         removed_item, actual_key = self.star.compatibility_handler.remove_reminder(msg_origin, index - 1)

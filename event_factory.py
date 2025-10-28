@@ -62,10 +62,10 @@ class EventFactory:
         platform_type = get_platform_type_from_system(platform_id, self.context)
         logger.info(f"create_event: 获取到的平台类型={platform_type}")
         
-        # 创建平台元数据，使用真实的平台类型
+        # 创建平台元数据，使用真实的平台类型，但ID保持原始值
         meta = PlatformMetadata(platform_type, "command_trigger", platform_id)
         
-        # 获取平台实例
+        # 获取平台实例 - 使用原始的platform_id（如"本地"）而不是平台类型
         platform_instance = self._get_platform_instance(platform_id)
         
         # 根据平台类型创建正确的事件对象
