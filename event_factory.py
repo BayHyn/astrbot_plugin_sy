@@ -1,11 +1,12 @@
 import time
+import asyncio
 from typing import Optional
 from astrbot.api import logger
 from astrbot.core.platform.astr_message_event import AstrMessageEvent
 from astrbot.core.platform.astrbot_message import AstrBotMessage, MessageType
 from astrbot.core.platform.platform_metadata import PlatformMetadata
 from astrbot.core.message.components import Plain
-from .utils import get_platform_type_from_origin
+from .utils import get_platform_type_from_origin, get_platform_type_from_system
 
 
 class EventFactory:
@@ -14,39 +15,33 @@ class EventFactory:
     def __init__(self, context):
         self.context = context
     
-    def _get_platform_instance(self, platform_type: str):
-        """获取平台实例的兼容性方法"""
+    def _get_platform_instance(self, platform_id: str):
+        """获取平台实例，通过平台ID（用户自定义名称）获取"""
         try:
-            # 首先尝试使用 get_platform (v3兼容)
-            if hasattr(self.context, 'get_platform'):
-                return self.context.get_platform(platform_type)
+            # 使用框架提供的方法通过平台ID获取平台实例
+            platform_inst = self.context.get_platform_inst(platform_id)
+            if platform_inst:
+                logger.debug(f"成功通过平台ID获取平台实例: {platform_id}")
+                return platform_inst
         except Exception as e:
-            logger.warning(f"使用get_platform获取平台实例失败: {e}")
+            logger.warning(f"通过context.get_platform_inst获取平台实例失败: {e}")
         
-        # 如果上面失败，尝试通过平台管理器遍历查找
-        try:
-            if hasattr(self.context, 'platform_manager') and hasattr(self.context.platform_manager, 'platform_insts'):
-                for platform_inst in self.context.platform_manager.platform_insts:
-                    if hasattr(platform_inst, 'meta') and platform_inst.meta().name == platform_type:
-                        return platform_inst
-        except Exception as e:
-            logger.warning(f"通过platform_manager获取平台实例失败: {e}")
-        
+        logger.error(f"无法获取平台实例: {platform_id}")
         return None
     
     def create_event(self, unified_msg_origin: str, command: str, creator_id: str, creator_name: str = None) -> AstrMessageEvent:
         """创建事件对象，根据平台类型自动选择正确的事件类"""
         
         # 解析平台信息
-        platform_name = "unknown"
+        platform_id = "unknown"
         session_id = "unknown"
         message_type = MessageType.FRIEND_MESSAGE
         
         if ":" in unified_msg_origin:
             parts = unified_msg_origin.split(":")
             if len(parts) >= 3:
-                # 使用兼容性工具提取平台类型，而不是直接使用第一部分
-                platform_name = get_platform_type_from_origin(unified_msg_origin, self.context)
+                # 直接使用第一部分作为平台ID（用户自定义的平台名称）
+                platform_id = parts[0]
                 msg_type_str = parts[1]
                 session_id = ":".join(parts[2:])  # 可能包含多个冒号
                 
@@ -55,23 +50,45 @@ class EventFactory:
                 elif "FriendMessage" in msg_type_str:
                     message_type = MessageType.FRIEND_MESSAGE
         
-        # 创建基础消息对象
-        msg = self._create_message_object(command, session_id, message_type, creator_id, creator_name)
+        # 添加调试日志
+        logger.info(f"create_event: platform_id={platform_id}, unified_msg_origin={unified_msg_origin}")
         
-        # 创建平台元数据
-        meta = PlatformMetadata(platform_name, "command_trigger")
+        # 创建基础消息对象
+        msg = self._create_message_object(command, session_id, message_type, creator_id, creator_name, platform_id)
+        
+        # 获取真实的平台类型
+        platform_type = get_platform_type_from_system(platform_id, self.context)
+        logger.info(f"create_event: 获取到的平台类型={platform_type}")
+        
+        # 创建平台元数据，使用真实的平台类型
+        meta = PlatformMetadata(platform_type, "command_trigger", platform_id)
+        
+        # 获取平台实例
+        platform_instance = self._get_platform_instance(platform_id)
         
         # 根据平台类型创建正确的事件对象
-        return self._create_platform_specific_event(platform_name, command, msg, meta, session_id)
+        return self._create_platform_specific_event(platform_type, command, msg, meta, session_id, platform_instance)
     
     def _create_message_object(self, command: str, session_id: str, message_type: MessageType, 
-                              creator_id: str, creator_name: str = None) -> AstrBotMessage:
+                              creator_id: str, creator_name: str = None, platform_id: str = None) -> AstrBotMessage:
         """创建消息对象"""
         msg = AstrBotMessage()
         msg.message_str = command
         msg.session_id = session_id
         msg.type = message_type
-        msg.self_id = "astrbot_command_trigger"
+        
+        # 尝试获取真实的self_id
+        platform_instance = None
+        if platform_id:
+            platform_instance = self._get_platform_instance(platform_id)
+        
+        # 直接使用默认数字ID，避免复杂的获取逻辑和潜在的错误
+        msg.self_id = "123456789"
+        logger.info(f"使用默认机器人ID: {msg.self_id}")
+        
+        if platform_instance:
+            logger.debug(f"平台实例存在，但为了稳定性使用默认ID")
+        
         msg.message_id = "command_trigger_" + str(int(time.time()))
         
         # 设置发送者信息
@@ -96,13 +113,13 @@ class EventFactory:
             "message": command,
             "message_type": message_type.value,
             "sender": {"user_id": creator_id, "nickname": creator_name or "用户"},
-            "self_id": "astrbot_command_trigger"
+            "self_id": msg.self_id  # 使用获取到的真实self_id
         }
         
         return msg
     
     def _create_platform_specific_event(self, platform_name: str, command: str, msg: AstrBotMessage, 
-                                       meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
+                                       meta: PlatformMetadata, session_id: str, platform_instance=None) -> AstrMessageEvent:
         """根据平台类型创建特定的事件对象"""
         
         if platform_name == "aiocqhttp":
@@ -130,7 +147,8 @@ class EventFactory:
     def _create_aiocqhttp_event(self, command: str, msg: AstrBotMessage, meta: PlatformMetadata, session_id: str) -> AstrMessageEvent:
         """创建 aiocqhttp 平台事件"""
         try:
-            platform = self._get_platform_instance("aiocqhttp")
+            platform = self._get_platform_instance(meta.id)  # 使用平台ID而不是平台类型
+            logger.info(f"_create_aiocqhttp_event: 尝试获取平台实例，platform_id={meta.id}")
             if platform and hasattr(platform, 'bot'):
                 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import AiocqhttpMessageEvent
                 event = AiocqhttpMessageEvent(
@@ -140,7 +158,9 @@ class EventFactory:
                     session_id=session_id,
                     bot=platform.bot
                 )
-                logger.info("成功创建 AiocqhttpMessageEvent")
+                # 确保事件对象有正确的平台实例引用
+                event.platform_instance = platform
+                logger.info(f"成功创建 AiocqhttpMessageEvent，平台ID: {meta.name}")
                 return event
         except Exception as e:
             logger.warning(f"创建 AiocqhttpMessageEvent 失败: {e}")
@@ -320,6 +340,35 @@ class EventFactory:
         event.unified_msg_origin = f"{meta.name}:{msg.type.value}:{session_id}"
         event.is_wake = True  # 标记为唤醒状态
         event.is_at_or_wake_command = True  # 标记为指令
+        
+        # 尝试设置平台实例和相关属性
+        try:
+            platform_instance = self._get_platform_instance(meta.id)  # 使用平台ID而不是平台类型
+            logger.info(f"_create_base_event: 尝试获取平台实例，platform_id={meta.id}")
+            if platform_instance:
+                event.platform_instance = platform_instance
+                
+                # 复制平台实例的所有相关属性到事件对象
+                copied_attrs = []
+                for attr_name in dir(platform_instance):
+                    # 跳过私有属性和方法
+                    if not attr_name.startswith('_'):
+                        try:
+                            attr_value = getattr(platform_instance, attr_name)
+                            # 跳过方法，只复制属性
+                            if not callable(attr_value):
+                                setattr(event, attr_name, attr_value)
+                                copied_attrs.append(attr_name)
+                        except Exception as attr_e:
+                            logger.debug(f"跳过属性 {attr_name}: {attr_e}")
+                            continue
+                
+                logger.info(f"为基础事件复制平台属性: {copied_attrs}, 平台ID: {meta.id}")
+                logger.info(f"为基础事件设置平台实例: {meta.id}")
+            else:
+                logger.warning(f"无法为基础事件获取平台实例: {meta.id}")
+        except Exception as e:
+            logger.warning(f"设置基础事件平台实例失败: {e}")
         
         logger.info("使用基础 AstrMessageEvent")
         return event

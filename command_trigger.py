@@ -46,6 +46,11 @@ class CommandTrigger:
         if self.original_send_method is None:
             self.original_send_method = target_event.send
         
+        # 保存原始的bot.api.call_action方法（如果存在）
+        self.original_call_action = None
+        if hasattr(target_event, 'bot') and hasattr(target_event.bot, 'api') and hasattr(target_event.bot.api, 'call_action'):
+            self.original_call_action = target_event.bot.api.call_action
+        
         # 创建拦截器包装函数
         async def intercepted_send(message_chain):
             # 捕获这条消息
@@ -56,8 +61,56 @@ class CommandTrigger:
             target_event._has_send_oper = True
             return True
         
+        # 创建bot.api.call_action拦截器
+        async def intercepted_call_action(action, **params):
+            # 检查是否是发送消息的action
+            if action in ["send_private_msg", "send_group_msg", "send_private_forward_msg", "send_group_forward_msg"]:
+                logger.info(f"拦截到bot.api.call_action调用: {action}")
+                
+                # 从params中提取消息内容并转换为MessageChain
+                if "message" in params:
+                    from astrbot.core.message.message_event_result import MessageChain
+                    from astrbot.api.message_components import Plain, At
+                    
+                    msg_chain = MessageChain()
+                    message_data = params["message"]
+                    
+                    # 处理消息数据
+                    if isinstance(message_data, list):
+                        for seg in message_data:
+                            if isinstance(seg, dict):
+                                seg_type = seg.get("type", "")
+                                seg_data = seg.get("data", {})
+                                
+                                if seg_type == "text":
+                                    msg_chain.chain.append(Plain(seg_data.get("text", "")))
+                                elif seg_type == "at":
+                                    qq = seg_data.get("qq", "")
+                                    msg_chain.chain.append(At(qq=qq))
+                                # 可以根据需要添加更多消息类型的处理
+                    
+                    # 捕获转换后的消息
+                    if msg_chain.chain:
+                        logger.info(f"从bot.api.call_action捕获到消息，包含 {len(msg_chain.chain)} 个组件")
+                        self.captured_messages.append(msg_chain)
+                
+                # 设置已发送标记，但不实际发送
+                target_event._has_send_oper = True
+                return {"message_id": 12345}  # 返回一个假的message_id
+            else:
+                # 对于非发送消息的action，调用原始方法
+                if self.original_call_action:
+                    return await self.original_call_action(action, **params)
+                else:
+                    return {}
+        
         # 替换事件的send方法
         target_event.send = intercepted_send
+        
+        # 替换bot.api.call_action方法（如果存在）
+        if self.original_call_action:
+            target_event.bot.api.call_action = intercepted_call_action
+        
         logger.info(f"已设置消息拦截器，监听事件: {target_event.unified_msg_origin}")
     
     def restore_message_sender(self):
@@ -65,6 +118,12 @@ class CommandTrigger:
         if self.original_send_method and self.target_event:
             self.target_event.send = self.original_send_method
             logger.info("已恢复原始消息发送器")
+        
+        # 恢复原始的bot.api.call_action方法
+        if hasattr(self, 'original_call_action') and self.original_call_action and self.target_event:
+            if hasattr(self.target_event, 'bot') and hasattr(self.target_event.bot, 'api'):
+                self.target_event.bot.api.call_action = self.original_call_action
+                logger.info("已恢复原始bot.api.call_action方法")
     
     def create_command_event(self, unified_msg_origin: str, command: str, creator_id: str, creator_name: str = None) -> AstrMessageEvent:
         """创建指令事件对象"""
